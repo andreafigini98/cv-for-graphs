@@ -219,3 +219,6 @@ __marimo__/
 .png 
 .jpg
 .pdf 
+
+# ignore venv
+.unareti_graph
