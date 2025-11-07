@@ -27,7 +27,6 @@ def build_graph_from_nodes_edges(
         G (nx.Graph): Constructed graph.
     """
     G = nx.Graph()
-
     # coord_to_id = {coord: i for i, coord in enumerate(node_centers)}
 
     # Add regular nodes
