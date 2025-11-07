@@ -25,3 +25,4 @@ def clean_squares(triangle_list, square_list):
             cleaned_squares.append(square)
 
     print(f"Original len {len(square_list)}, after cleaning {len(cleaned_squares)}")
+    return cleaned_squares
