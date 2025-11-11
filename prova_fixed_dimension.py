@@ -14,6 +14,7 @@ from utils.preprocessing import preprocess, remove_blue
 from utils.draw_grid import draw_node_grid, fill_gaps_grid
 from utils.build_networkx_graph import build_graph_from_nodes_edges
 from utils.utilis import clean_squares
+from utils.text_detection import detect_text
 
 
 def main():
@@ -60,6 +61,7 @@ def main():
         draw=True,
     )
 
+    detect_text(input, squares, "outputs/annotated.png", "outputs/associations.csv")
 
 if __name__ == "__main__":
     main()
