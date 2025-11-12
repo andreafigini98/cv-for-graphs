@@ -6,18 +6,23 @@ import re
 from typing import List, Tuple, Dict
 import csv
 from tqdm import tqdm
+import gc
+from utils.utilis import get_available_memory_gb
+
 
 def easyocr_blocks(gray_img):
     """
     Esegue OCR con EasyOCR e restituisce blocchi compatibili con i successivi step.
     """
-    reader = easyocr.Reader(['en', 'it'], gpu=False)  # usa GPU=True se disponibile
+    reader = easyocr.Reader(["en", "it"], gpu=False)  # usa GPU=True se disponibile
 
-    results = reader.readtext(gray_img, detail=1, paragraph=False, width_ths=0.6, ycenter_ths=0.5)
+    results = reader.readtext(
+        gray_img, detail=1, paragraph=False, width_ths=0.6, ycenter_ths=0.5
+    )
 
     text_blocks = []
-    #for (bbox, text, conf) in results:
-    for (bbox, text, conf) in tqdm(results, desc="Detecting text blocks"):
+    # for (bbox, text, conf) in results:
+    for bbox, text, conf in tqdm(results, desc="Detecting text blocks"):
         # bbox = [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
         x_coords = [p[0] for p in bbox]
         y_coords = [p[1] for p in bbox]
@@ -25,17 +30,19 @@ def easyocr_blocks(gray_img):
         w, h = int(max(x_coords) - x), int(max(y_coords) - y)
 
         if w > 8 and h > 8:
-            text_blocks.append({
-                "bbox": (x, y, w, h),
-                "ocr_text": text.strip(),
-                "confidence": float(conf)
-            })
+            text_blocks.append(
+                {
+                    "bbox": (x, y, w, h),
+                    "ocr_text": text.strip(),
+                    "confidence": float(conf),
+                }
+            )
     return text_blocks
 
 
-
-
-def remove_text_inside_cabins(text_blocks, cabins, margin=5, center_only=True, overlap_thresh=0.3):
+def remove_text_inside_cabins(
+    text_blocks, cabins, margin=5, center_only=True, overlap_thresh=0.3
+):
     """
     Filtra i token OCR (text_blocks) rimuovendo quelli che
     - hanno il centro dentro una cabina (center_only=True), o
@@ -57,8 +64,12 @@ def remove_text_inside_cabins(text_blocks, cabins, margin=5, center_only=True, o
             cw_e, ch_e = cw + 2 * margin, ch + 2 * margin
 
             # (A) centro dentro la cabina espansa
-            if center_only and (tx_center >= cx_e and tx_center <= cx_e + cw_e and
-                                ty_center >= cy_e and ty_center <= cy_e + ch_e):
+            if center_only and (
+                tx_center >= cx_e
+                and tx_center <= cx_e + cw_e
+                and ty_center >= cy_e
+                and ty_center <= cy_e + ch_e
+            ):
                 inside_flag = True
                 break
 
@@ -77,9 +88,6 @@ def remove_text_inside_cabins(text_blocks, cabins, margin=5, center_only=True, o
         if not inside_flag:
             filtered.append(tb)
     return filtered
-
-
-
 
 
 # =========================
@@ -129,15 +137,11 @@ def merge_lines_morph(text_blocks, img_shape, hor_kernel_w_frac=0.035, min_area=
     return line_boxes
 
 
-
-
-
-
-
 def dedup_blocks_by_iou(blocks, iou_thresh=0.6):
     """
     Deduplica blocchi (tiene i più grandi): utile dopo fusioni morfologiche.
     """
+
     def iou(a, b):
         ax, ay, aw, ah = a
         bx, by, bw, bh = b
@@ -153,7 +157,6 @@ def dedup_blocks_by_iou(blocks, iou_thresh=0.6):
         if all(iou(r["bbox"], k["bbox"]) < iou_thresh for k in kept):
             kept.append(r)
     return kept
-
 
 
 # Cosa fa:
@@ -172,10 +175,10 @@ def dedup_blocks_by_iou(blocks, iou_thresh=0.6):
 
 def group_line_boxes_into_blocks(
     line_boxes,
-    max_v_gap_frac,           # quanto due righe verticalmente distanti possono essere considerate parte dello stesso blocco
-    min_h_overlap_frac,    # quanto devono sovrapporsi orizzontalmente (come percentuale della larghezza) per essere uniti
-    max_x_shift_frac,      # quanto può cambiare la posizione orizzontale del blocco successivo.
-    max_lines_per_block
+    max_v_gap_frac,  # quanto due righe verticalmente distanti possono essere considerate parte dello stesso blocco
+    min_h_overlap_frac,  # quanto devono sovrapporsi orizzontalmente (come percentuale della larghezza) per essere uniti
+    max_x_shift_frac,  # quanto può cambiare la posizione orizzontale del blocco successivo.
+    max_lines_per_block,
 ):
     """
     Unisce line_boxes contigui (stessa colonna, gap verticale moderato) in blocchi verticali.
@@ -201,18 +204,24 @@ def group_line_boxes_into_blocks(
 
     blocks = []
     cur = [line_boxes[0]]
-    #for lb in line_boxes[1:]:
+    # for lb in line_boxes[1:]:
     for lb in tqdm(line_boxes[1:], desc="Grouping lines into blocks"):
         x, y, w, h = lb["bbox"]
         px, py, pw, ph = cur[-1]["bbox"]
 
         v_gap = y - (py + ph)
-        same_col = (h_overlap_frac((x, y, w, h), (px, py, pw, ph)) >= min_h_overlap_frac) or \
-                   (abs(x - px) <= int(round(max_x_shift_frac * max_w)))
+        same_col = (
+            h_overlap_frac((x, y, w, h), (px, py, pw, ph)) >= min_h_overlap_frac
+        ) or (abs(x - px) <= int(round(max_x_shift_frac * max_w)))
         xcen_diff = abs(x_center((x, y, w, h)) - x_center((px, py, pw, ph)))
         xcen_ok = xcen_diff <= 0.35 * max_w
 
-        if 0 <= v_gap <= max_v_gap and same_col and xcen_ok and len(cur) < max_lines_per_block:
+        if (
+            0 <= v_gap <= max_v_gap
+            and same_col
+            and xcen_ok
+            and len(cur) < max_lines_per_block
+        ):
             cur.append(lb)
         else:
             bx1 = min(b["bbox"][0] for b in cur)
@@ -232,24 +241,11 @@ def group_line_boxes_into_blocks(
     return blocks
 
 
-
-
-
-
 def is_inside(inner, outer):
     """Controlla se un rettangolo (inner) è completamente dentro un altro (outer)."""
     ix, iy, iw, ih = inner
     ox, oy, ow, oh = outer
-    return (
-        ix >= ox and
-        iy >= oy and
-        ix + iw <= ox + ow and
-        iy + ih <= oy + oh
-    )
-
-
-
-
+    return ix >= ox and iy >= oy and ix + iw <= ox + ow and iy + ih <= oy + oh
 
 
 # =============================
@@ -264,7 +260,9 @@ def ocr_blocks(img: np.ndarray, lang="ita+eng") -> List[Dict]:
     OCR semplice psm=6 (usato per ID interni). Meno recall rispetto a ocr_blocks_recall.
     """
     config = "--oem 3 --psm 6"
-    data = pytesseract.image_to_data(img, lang=lang, config=config, output_type=pytesseract.Output.DICT)
+    data = pytesseract.image_to_data(
+        img, lang=lang, config=config, output_type=pytesseract.Output.DICT
+    )
 
     def to_conf(v):
         try:
@@ -278,12 +276,14 @@ def ocr_blocks(img: np.ndarray, lang="ita+eng") -> List[Dict]:
         conf = to_conf(data["conf"][i])
         if conf <= 50 or not txt:
             continue
-        x, y, w, h = data["left"][i], data["top"][i], data["width"][i], data["height"][i]
+        x, y, w, h = (
+            data["left"][i],
+            data["top"][i],
+            data["width"][i],
+            data["height"][i],
+        )
         blocks.append({"text": txt, "conf": conf, "bbox": (x, y, w, h)})
     return blocks
-
-
-
 
 
 # - Ritaglia una regione interna alla cabina (con padding) per evitare i bordi.
@@ -294,7 +294,10 @@ def ocr_blocks(img: np.ndarray, lang="ita+eng") -> List[Dict]:
 # - regex: adattala al tuo formato ID (prefissi, sola numerica, ecc.).
 # - sostituire ocr_blocks con ocr_blocks_recall per massimizzare la probabilità di lettura ID (al costo di più calcolo)
 
-def extract_inner_id(img: np.ndarray, bbox: Tuple[int, int, int, int]) -> Tuple[str, float]:
+
+def extract_inner_id(
+    img: np.ndarray, bbox: Tuple[int, int, int, int]
+) -> Tuple[str, float]:
     """
     Estrae un ID presente DENTRO la cabina (OCR sul ROI interno).
     Ritorna: (id_letto, conf) oppure ("", 0.0) se non trovato
@@ -317,8 +320,6 @@ def extract_inner_id(img: np.ndarray, bbox: Tuple[int, int, int, int]) -> Tuple[
     if not best[0] and blocks:
         best = max(((b["text"], float(b["conf"])) for b in blocks), key=lambda x: x[1])
     return best
-
-
 
 
 # =========================
@@ -351,7 +352,7 @@ def find_squares_contours_strict(
     ar_max: float = 1.30,
     rect_comp_min: float = 0.88,
     right_angle_tol_deg: float = 12,
-    debug_prefix: str = None
+    debug_prefix: str = None,
 ) -> List[Tuple[np.ndarray, Tuple[int, int, int, int]]]:
     """
     Rileva cabine (rettangoli quasi quadrati) via contorni, CLAHE+adaptive+closing.
@@ -364,8 +365,9 @@ def find_squares_contours_strict(
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     clahe = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
     eq = clahe.apply(gray)
-    thr = cv2.adaptiveThreshold(eq, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-                                cv2.THRESH_BINARY_INV, 35, 7)
+    thr = cv2.adaptiveThreshold(
+        eq, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY_INV, 35, 7
+    )
     kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
     thr = cv2.morphologyEx(thr, cv2.MORPH_CLOSE, kernel, iterations=1)
     thr = cv2.dilate(thr, kernel, 1)
@@ -394,7 +396,7 @@ def find_squares_contours_strict(
         return all(abs(a - 90.0) <= tol_deg for a in angs)
 
     candidates = []
-    #for cnt in contours:
+    # for cnt in contours:
     for cnt in tqdm(contours, desc="Detecting cabins"):
         area = cv2.contourArea(cnt)
         if area < min_area or area > max_area:
@@ -441,9 +443,53 @@ def find_squares_contours_strict(
     return kept
 
 
+def easyocr_blocks_tiled(image, reader, tile_size=(1000, 1000), overlap=50):
+    """
+    Tile an image for OCR but preserve bbox structure compatible with detect_text.
+
+    Returns a list of dicts:
+        [{"bbox": [x, y, w, h], "ocr_text": str, "conf": float}, ...]
+    """
+    H, W = image.shape[:2]
+    all_text_blocks = []
+
+    for y0 in tqdm(range(0, H, tile_size[1] - overlap), desc="easyocr tiled"):
+        y1 = min(y0 + tile_size[1], H)
+        for x0 in range(0, W, tile_size[0] - overlap):
+            x1 = min(x0 + tile_size[0], W)
+
+            tile = image[y0:y1, x0:x1]
+
+            results = reader.readtext(tile)
+            for bbox, text, conf in results:
+                # Compute minimal bounding rectangle for EasyOCR polygon
+                xs = [pt[0] for pt in bbox]
+                ys = [pt[1] for pt in bbox]
+                min_x, max_x = min(xs), max(xs)
+                min_y, max_y = min(ys), max(ys)
+                w, h = max_x - min_x, max_y - min_y
+
+                # Adjust coordinates to original image
+                all_text_blocks.append(
+                    {
+                        "bbox": [min_x + x0, min_y + y0, w, h],
+                        "ocr_text": text.strip(),
+                        "conf": conf,
+                    }
+                )
+
+            del tile
+            gc.collect()
+
+    return all_text_blocks
 
 
-def detect_text(path_in: str, squares, path_out: str = "annotated.png", csv_out: str = "associations.csv"):
+def detect_text(
+    path_in: str,
+    squares,
+    path_out: str = "annotated.png",
+    csv_out: str = "associations.csv",
+):
     """
     Pipeline aggiornata e coerente con le funzioni che hai nel file.
     """
@@ -466,63 +512,82 @@ def detect_text(path_in: str, squares, path_out: str = "annotated.png", csv_out:
     gray_boosted = cv2.addWeighted(gray_boosted, 1.0, g, 0.15, 0)
     gray_boosted = cv2.normalize(gray_boosted, None, 0, 255, cv2.NORM_MINMAX)
 
-    gray_boosted = cv2.addWeighted(b, 0.45, r, 0.45, 0)
-    gray_boosted = cv2.addWeighted(gray_boosted, 1.0, g, 0.15, 0)
+    # gray_boosted = cv2.addWeighted(b, 0.45, r, 0.45, 0)
+    # gray_boosted = cv2.addWeighted(gray_boosted, 1.0, g, 0.15, 0)
 
     # 🔹 aumenta contrasto
     gray_boosted = cv2.normalize(gray_boosted, None, 0, 255, cv2.NORM_MINMAX)
 
     # 🔹 leggero sharpening per evidenziare le scritte colorate
-    kernel_sharp = np.array([[0, -1, 0],
-                            [-1, 5, -1],
-                            [0, -1, 0]], dtype=np.float32)
+    kernel_sharp = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
     gray_ocr = cv2.filter2D(gray_boosted, -1, kernel_sharp)
 
     # (Niente threshold binario qui, lo applicheremo più avanti nei singoli blocchi OCR)
     gray_ocr = gray_boosted.copy()
 
     # OCR globale ad alto recall
-    #text_blocks = ocr_blocks_recall(gray_ocr)
-    text_blocks = easyocr_blocks(gray_ocr)
+    # text_blocks = ocr_blocks_recall(gray_ocr)
+
+    del b, g, r, gray_boosted
+    gc.collect()
+
+    # Try only if there are at least 8 gb
+    if get_available_memory_gb() > 8:
+        # ONE SHOT, very memory intensive
+        # MAY CRASH!!!
+        print(f"{get_available_memory_gb()} GB of memory, trying oneshot")
+        text_blocks = easyocr_blocks(gray_ocr)
+    else:
+        # TILED, SLOWER BUT LESS MEMORY NEEDE
+        print(f"{get_available_memory_gb()} GB of memory, going for the tiling")
+        reader = easyocr.Reader(["en", "it"], gpu=False)  # CPU to save memory
+        text_blocks = easyocr_blocks_tiled(
+            gray_ocr, reader, tile_size=(1000, 1000), overlap=50
+        )
+    print(f"[DBG] Blocchi OCR trovati: {len(text_blocks)}")
 
     print(f"[DBG] Blocchi testuali OCR: {len(text_blocks)}")
 
     # rimuovi testo interno alle cabine
-    text_blocks = remove_text_inside_cabins(text_blocks, squares, margin=8, center_only=True, overlap_thresh=0.25)
+    text_blocks = remove_text_inside_cabins(
+        text_blocks, squares, margin=8, center_only=True, overlap_thresh=0.25
+    )
 
     # 4) Consolidamento blocchi testuali globali
-    line_boxes = merge_lines_morph(text_blocks, (H, W),
-                                hor_kernel_w_frac=0.008,
-                                min_area=90)
-    blocks_global = group_line_boxes_into_blocks(line_boxes,
-                                                max_v_gap_frac=0.35,
-                                                min_h_overlap_frac=0.75,
-                                                max_x_shift_frac=0.12,
-                                                max_lines_per_block=5)
-    
-    #| Tipo di fusione indesiderata                 | Cosa modificare        | Valore consigliato |
-    #| -------------------------------------------- | ---------------------- | ------------------ |
-    #| Blocchi vicini orizzontalmente fusi          | `hor_kernel_w_frac` ↓  | 0.008              |
-    #| Blocchi uno sopra l’altro fusi               | `max_v_gap_frac` ↓     | 0.35               |
-    #| Blocchi con disallineamento orizzontale fusi | `min_h_overlap_frac` ↑ | 0.8–0.9            |
+    line_boxes = merge_lines_morph(
+        text_blocks, (H, W), hor_kernel_w_frac=0.008, min_area=90
+    )
+    blocks_global = group_line_boxes_into_blocks(
+        line_boxes,
+        max_v_gap_frac=0.35,
+        min_h_overlap_frac=0.75,
+        max_x_shift_frac=0.12,
+        max_lines_per_block=5,
+    )
 
-    #blocks_global = remove_blocks_overlapping_cabins(blocks_global, squares, overlap_thresh=0.30)
+    # | Tipo di fusione indesiderata                 | Cosa modificare        | Valore consigliato |
+    # | -------------------------------------------- | ---------------------- | ------------------ |
+    # | Blocchi vicini orizzontalmente fusi          | `hor_kernel_w_frac` ↓  | 0.008              |
+    # | Blocchi uno sopra l’altro fusi               | `max_v_gap_frac` ↓     | 0.35               |
+    # | Blocchi con disallineamento orizzontale fusi | `min_h_overlap_frac` ↑ | 0.8–0.9            |
+
+    # blocks_global = remove_blocks_overlapping_cabins(blocks_global, squares, overlap_thresh=0.30)
 
     print(f"[DBG] Blocchi consolidati: {len(blocks_global)}")
-    
-    
+
     for block in blocks_global:
         x, y, w, h = block["bbox"]
-        
+
         inside_texts = []
         for tb in text_blocks:
             if is_inside(tb["bbox"], block["bbox"]):
-                inside_texts.append((tb.get("text") or tb.get("ocr_text") or "").strip())
+                inside_texts.append(
+                    (tb.get("text") or tb.get("ocr_text") or "").strip()
+                )
         block["text"] = " ".join(inside_texts).strip()
-    
 
     # 🔹 OCR individuale su ciascun blocco consolidato (salviamo testo dentro ogni blocco)
-    #for idx, blk in enumerate(blocks_global):
+    # for idx, blk in enumerate(blocks_global):
     for idx, blk in tqdm(enumerate(blocks_global), desc="Single block OCR"):
         x, y, w, h = blk["bbox"]
 
@@ -535,18 +600,17 @@ def detect_text(path_in: str, squares, path_out: str = "annotated.png", csv_out:
         pad_top, pad_bottom, pad_right, pad_left = 1, 1, 1, 1
 
         # 🔹 taglio extra per evitare bordi delle cabine
-        #shift_left = 1  # o 0.02 * w
+        # shift_left = 1  # o 0.02 * w
         x0 = max(0, x + pad_left)
         y0 = max(0, y - pad_top)
         x1 = min(W, x + w + pad_right)
         y1 = min(H, y + h + pad_bottom)
-        
+
         if x1 <= x0 or y1 <= y0:
             blk["ocr_text"] = ""
             continue
 
-        roi = img[int(y0):int(y1), int(x0):int(x1)]
-
+        roi = img[int(y0) : int(y1), int(x0) : int(x1)]
 
         # --- 1. Upscaling
         roi_up = cv2.resize(roi, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
@@ -557,7 +621,9 @@ def detect_text(path_in: str, squares, path_out: str = "annotated.png", csv_out:
         roi_gray = cv2.convertScaleAbs(roi_gray, alpha=1.6, beta=-30)
 
         # --- 3. Threshold (testo nero su bianco)
-        _, roi_bin = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        _, roi_bin = cv2.threshold(
+            roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        )
 
         # --- 4. Pulizia: median blur + dilate per chiudere buchi
         roi_bin = cv2.medianBlur(roi_bin, 3)
@@ -568,8 +634,10 @@ def detect_text(path_in: str, squares, path_out: str = "annotated.png", csv_out:
         cv2.imwrite(f"img/clean_block_{idx:02d}.png", roi_bin)
 
         # --- 5. OCR Tesseract
-        custom_config = r'--psm 6 -c preserve_interword_spaces=1 -c textord_space_size_is_variable=1'
-        text = pytesseract.image_to_string(roi_bin, config=custom_config, lang='ita+eng')
+        custom_config = r"--psm 6 -c preserve_interword_spaces=1 -c textord_space_size_is_variable=1"
+        text = pytesseract.image_to_string(
+            roi_bin, config=custom_config, lang="ita+eng"
+        )
 
         # --- 6. Pulizia testo
         text = text.strip()
@@ -581,7 +649,7 @@ def detect_text(path_in: str, squares, path_out: str = "annotated.png", csv_out:
         text = re.sub(r"\s+", " ", text).strip()
 
         blk["ocr_text"] = text
-        #print(f"[OCR-CLEAN] Block {idx}: {repr(text)}")
+        # print(f"[OCR-CLEAN] Block {idx}: {repr(text)}")
 
     # ========== Ora assegniamo block['text'] dal 'ocr_text' ottenuto ==========
     for block in blocks_global:
@@ -603,7 +671,15 @@ def detect_text(path_in: str, squares, path_out: str = "annotated.png", csv_out:
     for i, (_, bbox) in enumerate(squares):
         x, y, w, h = bbox
         cv2.rectangle(annotated, (x, y), (x + w, y + h), (0, 140, 255), 2)
-        cv2.putText(annotated, f"C{i}", (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 140, 255), 1)
+        cv2.putText(
+            annotated,
+            f"C{i}",
+            (x, y - 5),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (0, 140, 255),
+            1,
+        )
 
     # 7) Estrai ID interni delle cabine
     ids_per_square = []
@@ -615,13 +691,14 @@ def detect_text(path_in: str, squares, path_out: str = "annotated.png", csv_out:
     # 8) ASSOCIAZIONE CABINA -> BLOCCO (con vincoli spaziali orizzontali)
     # ===================
     associations = []
-    #for i, ((_, bbox), (cabina_id, conf)) in enumerate(zip(squares, ids_per_square)):
-    for i, ((_, bbox), (cabina_id, conf)) in tqdm(enumerate(zip(squares, ids_per_square)), desc="Text-Cabins association"):
+    # for i, ((_, bbox), (cabina_id, conf)) in enumerate(zip(squares, ids_per_square)):
+    for i, ((_, bbox), (cabina_id, conf)) in tqdm(
+        enumerate(zip(squares, ids_per_square)), desc="Text-Cabins association"
+    ):
         x, y, w, h = bbox
 
         cx, cy = x + w // 2, y + h // 2
         ref_x, ref_y = x + w, y + h  # angolo in basso a destra della cabina
-
 
         best_idx, best_dist = -1, 1e9
         best_text = ""
@@ -637,19 +714,19 @@ def detect_text(path_in: str, squares, path_out: str = "annotated.png", csv_out:
                     best_idx, best_dist = j, dist
                     best_text = (b.get("text") or b.get("txt") or "").strip()
 
-
-        associations.append({
-            "cabina_index": i,
-            "cabina_id": cabina_id,
-            "cabina_conf": float(conf) if conf is not None else 0.0,
-            "info_text": best_text if best_idx != -1 else ""
-        })
+        associations.append(
+            {
+                "cabina_index": i,
+                "cabina_id": cabina_id,
+                "cabina_conf": float(conf) if conf is not None else 0.0,
+                "info_text": best_text if best_idx != -1 else "",
+            }
+        )
 
         if best_idx != -1:
             bx, by, bw, bh = blocks_global[best_idx]["bbox"]
             bx_center, by_center = bx + bw // 2, by + bh // 2
             cv2.line(annotated, (cx, cy), (bx_center, by_center), (0, 0, 255), 2)
-
 
     # salva immagine e CSV come prima
     cv2.imwrite(path_out, annotated)
@@ -659,25 +736,31 @@ def detect_text(path_in: str, squares, path_out: str = "annotated.png", csv_out:
         writer = csv.writer(f)
         writer.writerow(["cabina_index", "cabina_id", "cabina_conf", "info_text"])
         for a in associations:
-            writer.writerow([
-                a["cabina_index"],
-                a["cabina_id"],
-                f"{a['cabina_conf']:.1f}",
-                a["info_text"].replace("\n", " ").replace("\r", "").strip()
-            ])
+            writer.writerow(
+                [
+                    a["cabina_index"],
+                    a["cabina_id"],
+                    f"{a['cabina_conf']:.1f}",
+                    a["info_text"].replace("\n", " ").replace("\r", "").strip(),
+                ]
+            )
     print(f"✅ CSV salvato in {csv_out}")
-    print(f"🔗 Collegamenti trovati: {sum(1 for a in associations if a['info_text'])}/{len(associations)}")
+    print(
+        f"🔗 Collegamenti trovati: {sum(1 for a in associations if a['info_text'])}/{len(associations)}"
+    )
 
     results = []
     for a in associations:
         i = a["cabina_index"]
         _, bbox = squares[i]
-        results.append({
-            "cabina_index": i,
-            "bbox": bbox,
-            "cabina_id": a["cabina_id"],
-            "cabina_conf": a["cabina_conf"],
-            "info_text": a["info_text"]
-        })
+        results.append(
+            {
+                "cabina_index": i,
+                "bbox": bbox,
+                "cabina_id": a["cabina_id"],
+                "cabina_conf": a["cabina_conf"],
+                "info_text": a["info_text"],
+            }
+        )
 
     return results, annotated

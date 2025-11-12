@@ -27,3 +27,12 @@ def clean_squares(triangle_list, square_list):
     print(f"Original len {len(square_list)}, after cleaning {len(cleaned_squares)}")
 
     return cleaned_squares
+
+
+def get_available_memory_gb():
+    with open("/proc/meminfo") as f:
+        for line in f:
+            if line.startswith("MemAvailable:"):
+                parts = line.split()
+                kb = int(parts[1])
+                return kb / (1024**2)
