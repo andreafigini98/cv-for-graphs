@@ -15,6 +15,7 @@ from utils.draw_grid import draw_node_grid, fill_gaps_grid
 from utils.build_networkx_graph import build_graph_from_nodes_edges
 from utils.utilis import clean_squares
 from utils.text_detection import detect_text
+from utils.image_to_black import enhance_text
 
 
 def main():
@@ -61,7 +62,10 @@ def main():
         draw=True,
     )
 
-    detect_text(input, squares, "outputs/annotated.png", "outputs/associations.csv")
+    # 🔹 Migliora contrasto testo
+    #enhance_text(input, "input_data/enhanced_img.png")
+    # !!! TODO: enhance_text non funziona bene con immagini jpg
+    detect_text("input_data/enhanced_img.png", squares, "outputs/annotated.png", "outputs/associations.csv")
 
 if __name__ == "__main__":
     main()

@@ -5,6 +5,7 @@ import pytesseract
 import re
 from typing import List, Tuple, Dict
 import csv
+from tqdm import tqdm
 
 def easyocr_blocks(gray_img):
     """
@@ -15,7 +16,8 @@ def easyocr_blocks(gray_img):
     results = reader.readtext(gray_img, detail=1, paragraph=False, width_ths=0.6, ycenter_ths=0.5)
 
     text_blocks = []
-    for (bbox, text, conf) in results:
+    #for (bbox, text, conf) in results:
+    for (bbox, text, conf) in tqdm(results, desc="Detecting text blocks"):
         # bbox = [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
         x_coords = [p[0] for p in bbox]
         y_coords = [p[1] for p in bbox]
@@ -199,7 +201,8 @@ def group_line_boxes_into_blocks(
 
     blocks = []
     cur = [line_boxes[0]]
-    for lb in line_boxes[1:]:
+    #for lb in line_boxes[1:]:
+    for lb in tqdm(line_boxes[1:], desc="Grouping lines into blocks"):
         x, y, w, h = lb["bbox"]
         px, py, pw, ph = cur[-1]["bbox"]
 
@@ -391,7 +394,8 @@ def find_squares_contours_strict(
         return all(abs(a - 90.0) <= tol_deg for a in angs)
 
     candidates = []
-    for cnt in contours:
+    #for cnt in contours:
+    for cnt in tqdm(contours, desc="Detecting cabins"):
         area = cv2.contourArea(cnt)
         if area < min_area or area > max_area:
             continue
@@ -443,6 +447,7 @@ def detect_text(path_in: str, squares, path_out: str = "annotated.png", csv_out:
     """
     Pipeline aggiornata e coerente con le funzioni che hai nel file.
     """
+    print("-------- Text Detection Phase ----------")
 
     img = cv2.imread(path_in)
     if img is None:
@@ -517,7 +522,8 @@ def detect_text(path_in: str, squares, path_out: str = "annotated.png", csv_out:
     
 
     # 🔹 OCR individuale su ciascun blocco consolidato (salviamo testo dentro ogni blocco)
-    for idx, blk in enumerate(blocks_global):
+    #for idx, blk in enumerate(blocks_global):
+    for idx, blk in tqdm(enumerate(blocks_global), desc="Single block OCR"):
         x, y, w, h = blk["bbox"]
 
         # se bbox invalido skip
@@ -575,7 +581,7 @@ def detect_text(path_in: str, squares, path_out: str = "annotated.png", csv_out:
         text = re.sub(r"\s+", " ", text).strip()
 
         blk["ocr_text"] = text
-        print(f"[OCR-CLEAN] Block {idx}: {repr(text)}")
+        #print(f"[OCR-CLEAN] Block {idx}: {repr(text)}")
 
     # ========== Ora assegniamo block['text'] dal 'ocr_text' ottenuto ==========
     for block in blocks_global:
@@ -609,7 +615,8 @@ def detect_text(path_in: str, squares, path_out: str = "annotated.png", csv_out:
     # 8) ASSOCIAZIONE CABINA -> BLOCCO (con vincoli spaziali orizzontali)
     # ===================
     associations = []
-    for i, ((_, bbox), (cabina_id, conf)) in enumerate(zip(squares, ids_per_square)):
+    #for i, ((_, bbox), (cabina_id, conf)) in enumerate(zip(squares, ids_per_square)):
+    for i, ((_, bbox), (cabina_id, conf)) in tqdm(enumerate(zip(squares, ids_per_square)), desc="Text-Cabins association"):
         x, y, w, h = bbox
 
         cx, cy = x + w // 2, y + h // 2
