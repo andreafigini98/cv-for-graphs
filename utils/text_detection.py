@@ -484,9 +484,100 @@ def easyocr_blocks_tiled(image, reader, tile_size=(1000, 1000), overlap=50):
     return all_text_blocks
 
 
+
+
+
+
+
+
+# =============================
+# Robust left-crop to remove cabin border before OCR
+# =============================
+def compute_cut_x_from_roi(roi, debug_path=None):
+    """
+    Cerca la prima colonna da sinistra dove inizia il testo (o area chiara).
+    Ritorna cut_x (numero di pixel da tagliare a sinistra).
+    """
+    gray = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+    h, w = gray.shape
+
+    # Parametri adattivi
+    scan_rows = min(max(int(0.05 * h), 8), min(60, h))  # quanti pixel in alto considerare
+    max_shift = max(1, int(0.45 * w))                   # non tagliare oltre questa frazione
+    min_remaining_w = max(20, int(0.10 * w))            # mantieni almeno questa larghezza
+
+    # 1) proiezione orizzontale (media dei primi scan_rows)
+    top_patch = gray[:scan_rows, :].astype(np.float32)
+    col_mean = top_patch.mean(axis=0)  # shape (w,)
+
+    # smoothing 1D
+    kernel_size = 7
+    k = np.ones(kernel_size) / kernel_size
+    smooth = np.convolve(col_mean, k, mode="same")
+
+    # range dinamico e soglie
+    vmin, vmax = smooth.min(), smooth.max()
+    vrange = max(1e-3, vmax - vmin)
+    # soglia su valore assoluto: consideriamo "chiaro" un valore abbastanza sopra il minimo
+    value_thresh = vmin + 0.12 * vrange
+
+    # 2) gradiente: cerca salto netto da scuro -> chiaro
+    grad = np.diff(smooth)
+    # soglia gradiente considerevole (adattiva)
+    grad_thresh = max(3.0, 0.08 * vrange)
+
+    cut_x = None
+
+    # Preferiamo trovare un punto dove il gradiente è positivo e la smooth supera value_thresh
+    candidates = np.where((np.concatenate(([0.0], grad)) > grad_thresh) & (smooth > value_thresh))[0]
+    if candidates.size > 0:
+        cut_x = int(max(0, candidates[0] - 1))  # piccolo left margin
+    else:
+        # fallback 1: primo punto dove smooth supera una soglia minima (più permissivo)
+        idx = np.where(smooth > (vmin + 0.08 * vrange))[0]
+        if idx.size > 0:
+            cut_x = int(max(0, idx[0] - 1))
+
+    # Fallback 2: se ancora nulla, controlla più righe e considera "colonna non scura"
+    if cut_x is None:
+        # consideriamo le prime few_rows e cerchiamo una colonna con non-troppi pixel scuri
+        few_rows = min(max(12, scan_rows), h)
+        min_dark_in_col = int(0.60 * few_rows)  # se una colonna ha >= questo, è bordo
+        cut_x_found = None
+        for x in range(min(max_shift, w - min_remaining_w)):
+            col = gray[:few_rows, x]
+            dark_count = int(np.sum(col < 100))
+            if dark_count < min_dark_in_col:
+                cut_x_found = x
+                break
+        if cut_x_found is not None:
+            cut_x = int(max(0, cut_x_found - 1))
+
+    # Safety clamps
+    if cut_x is None or cut_x < 0:
+        cut_x = 0
+    if cut_x > max_shift:
+        cut_x = max_shift
+    if w - cut_x < min_remaining_w:
+        # non tagliare se rimarrebbe troppo poco
+        cut_x = 0
+
+    # Debug: salva immagine con linea di taglio
+    if debug_path is not None:
+        vis = cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR)
+        cv2.line(vis, (cut_x, 0), (cut_x, h - 1), (0, 0, 255), 1)
+        cv2.imwrite(debug_path, vis)
+
+    return cut_x
+
+
+
+
+
+
+
 def detect_text(
     path_in: str,
-    squares,
     path_out: str = "annotated.png",
     csv_out: str = "associations.csv",
 ):
@@ -611,6 +702,36 @@ def detect_text(
             continue
 
         roi = img[int(y0) : int(y1), int(x0) : int(x1)]
+
+        
+        # =============================
+        #  FIX: rimuovere bordo a sinistra se il pixel (0,0) è scuro
+        # =============================
+
+        # Esegui il calcolo e taglia
+        cut_x = compute_cut_x_from_roi(roi, debug_path=f"debug_cut_block_{idx:02d}.png")
+        if cut_x > 0:
+            roi = roi[:, cut_x:]
+
+
+        roi_gray_check = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
+
+        threshold_dark = 150   # pixel sotto questo valore è considerato nero/scuro
+        max_shift = int(0.20 * roi.shape[1])   # NON tagliare oltre il 20% della larghezza
+
+        shift = 0
+        while shift < max_shift:
+            if roi_gray_check[0, shift] > threshold_dark:
+                break
+            shift += 1
+
+        # Se serve, taglia la parte sinistra
+        if shift > 0:
+            roi = roi[:, shift:]
+
+
+
+        # --------------------------------------------------------------------------------------------------------
 
         # --- 1. Upscaling
         roi_up = cv2.resize(roi, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
