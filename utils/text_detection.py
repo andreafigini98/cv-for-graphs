@@ -578,6 +578,7 @@ def compute_cut_x_from_roi(roi, debug_path=None):
 
 def detect_text(
     path_in: str,
+    triangles,
     path_out: str = "annotated.png",
     csv_out: str = "associations.csv",
 ):
@@ -595,6 +596,13 @@ def detect_text(
     # 2) Trova cabine
     squares = find_squares_contours_strict(img)
     print(f"[DBG] Cabine rilevate: {len(squares)}")
+
+    # Convert each triangle into the same tuple format used for squares
+    for tri in triangles:
+        pts = np.array(tri, dtype=np.int32).reshape((-1,1,2))
+        x, y, w, h = cv2.boundingRect(pts)
+        squares.append(("TRIANGLE", (x, y, w, h)))
+
 
     b, g, r = cv2.split(img)
 
@@ -709,7 +717,7 @@ def detect_text(
         # =============================
 
         # Esegui il calcolo e taglia
-        cut_x = compute_cut_x_from_roi(roi, debug_path=f"debug_cut_block_{idx:02d}.png")
+        cut_x = compute_cut_x_from_roi(roi, debug_path=None)
         if cut_x > 0:
             roi = roi[:, cut_x:]
 
@@ -752,7 +760,7 @@ def detect_text(
         roi_bin = cv2.dilate(roi_bin, kernel, iterations=1)
 
         # salva ritaglio pulito per debug
-        cv2.imwrite(f"img/clean_block_{idx:02d}.png", roi_bin)
+        cv2.imwrite(f"outputs/img/clean_block_{idx:02d}.png", roi_bin)
 
         # --- 5. OCR Tesseract
         custom_config = r"--psm 6 -c preserve_interword_spaces=1 -c textord_space_size_is_variable=1"

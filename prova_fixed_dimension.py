@@ -65,7 +65,7 @@ def main():
     # 🔹 Migliora contrasto testo
     #enhance_text(input, "input_data/enhanced_img.png")
     # !!! TODO: enhance_text non funziona bene con immagini jpg
-    detect_text("input_data/enhanced_img.png", "outputs/annotated.png", "outputs/associations.csv")
+    detect_text("input_data/enhanced_img.png", triangles, "outputs/annotated.png", "outputs/associations.csv")
 
 if __name__ == "__main__":
     main()
