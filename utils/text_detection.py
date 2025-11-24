@@ -105,7 +105,7 @@ def remove_text_inside_cabins(
 # - min_area: elimina linee troppo piccole (rumore).
 
 
-def merge_lines_morph(text_blocks, img_shape, hor_kernel_w_frac=0.035, min_area=80):
+def merge_lines_morph(text_blocks, img_shape, hor_kernel_w_frac, min_area):
     """
     Unisce token sulla stessa riga via morfologia su maschera dei bbox OCR.
     Ritorna: line_boxes = [{bbox}]
@@ -118,6 +118,8 @@ def merge_lines_morph(text_blocks, img_shape, hor_kernel_w_frac=0.035, min_area=
         x2, y2 = min(W, x + w), min(H, y + h)
         if x2 <= x1 or y2 <= y1:
             continue
+
+        x1, y1, x2, y2 = map(int, [x1, y1, x2, y2])
         cv2.rectangle(mask, (x1, y1), (x2, y2), 255, -1)
 
     k_w = max(5, int(round(hor_kernel_w_frac * W)))
@@ -654,11 +656,11 @@ def detect_text(
 
     # 4) Consolidamento blocchi testuali globali
     line_boxes = merge_lines_morph(
-        text_blocks, (H, W), hor_kernel_w_frac=0.008, min_area=90
+        text_blocks, (H, W), hor_kernel_w_frac=0.005, min_area=90
     )
     blocks_global = group_line_boxes_into_blocks(
         line_boxes,
-        max_v_gap_frac=0.35,
+        max_v_gap_frac=0.25,
         min_h_overlap_frac=0.75,
         max_x_shift_frac=0.12,
         max_lines_per_block=5,
@@ -862,7 +864,7 @@ def detect_text(
     print(f"✅ Annotazione salvata in {path_out}")
 
     with open(csv_out, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
+        writer = csv.writer(f, delimiter=";", quoting=csv.QUOTE_NONE)
         writer.writerow(["cabina_index", "cabina_id", "cabina_conf", "info_text"])
         for a in associations:
             writer.writerow(
