@@ -98,7 +98,7 @@ def detect_triangles_from_edges(
     triangles = []
 
     lines = cv2.HoughLinesP(
-        img_processed, 1, np.pi / 180, threshold=50, minLineLength=70, maxLineGap=10
+        img_processed, 1, np.pi / 180, threshold=40, minLineLength=70, maxLineGap=10
     )
     edges_list = []
     if lines is not None:

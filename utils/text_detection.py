@@ -1042,14 +1042,14 @@ def detect_text(
         x, y, w, h = tb["bbox"]
         x, y, w, h = map(int, [x, y, w, h])
         cv2.rectangle(dbg_img, (x, y), (x + w, y + h), (0, 0, 255), 1)
-    cv2.imwrite("debug_boxes.png", dbg_img)
+    cv2.imwrite("outputs/debug_boxes.png", dbg_img)
 
     # 5) Ora, per ogni cabina, estrai ROI, prendi i text_blocks locali e raggruppa
     all_local_blocks_global_coords = []
 
     # tuning: pad multipliers (left, right, top, bottom)
     #roi_pads = (0.6, 1.6, 0.3, 1.1)
-    roi_pads = (0.6, 5, 0.3, 1.1)
+    roi_pads = (0.6, 5, 0.3, 1.5)
 
     for cab_idx, (_, cab_bbox) in enumerate(tqdm(squares, desc="Processing cabins")):
         roi = expand_region_around_cabina(cab_bbox, img.shape, pads=roi_pads)
@@ -1064,7 +1064,7 @@ def detect_text(
 
         # merge lines inside the ROI (note: merge_lines_morph expects (H,W) for the image it receives)
         try:
-            local_line_boxes = merge_lines_morph(local_text_blocks, (roi_h, roi_w), hor_kernel_w_frac=0.008, min_area=60)
+            local_line_boxes = merge_lines_morph(local_text_blocks, (roi_h, roi_w), hor_kernel_w_frac=0.009, min_area=60)
         except Exception:
             # fallback: if merge_lines_morph assumes global coords, try converting bboxes to tuples
             local_line_boxes = merge_lines_morph(local_text_blocks, (roi_h, roi_w), hor_kernel_w_frac=0.008, min_area=60)
