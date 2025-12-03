@@ -979,6 +979,72 @@ def shift_boxes_to_global(blocks_local, roi):
 
 
 
+import re
+def normalize_TUG(s):
+    if not s:
+        return ""
+
+    # 1. togli gli spazi tra lettera e numero
+    s = re.sub(r"([TUG])\s+", r"\1", s)
+
+    # 2. se c'è una O dopo la lettera → è uno 0
+    s = re.sub(r"([TUG])O(\d)", lambda m: m.group(1) + "0" + m.group(2), s)
+
+    # 3. TO 1 → T01
+    s = re.sub(r"([TUG])\s*O\s*(\d)", lambda m: m.group(1) + "0" + m.group(2), s)
+
+    # 4. spazi residui
+    return s.strip()
+
+
+
+
+
+def parse_info_text(s):
+    original = s.strip()
+
+    # --- 1) Cabina ID generale (AA 10-2-123456)
+    cabina_pattern = r"([A-Z]{2}\s*\d{1,2}-\d-\d{6})"
+    cabina_match = re.search(cabina_pattern, original)
+    cabina_id = cabina_match.group(1).strip() if cabina_match else ""
+
+    rest = original[len(cabina_id):].strip() if cabina_id else original
+
+    # --- 2) Estrarre tutti i T/U/G (anche multipli)
+    #TUG_PATTERN = r"([TUG]\s*[0O]?\d+\s*\([^)]*\))"
+    TUG_PATTERN = r"([TUG]O?\s*\d+\s*\([^)]*\))"
+
+    matches = re.findall(TUG_PATTERN, rest)
+
+    # Normalizza e classifica
+    trasformatori = []
+    utenze = []
+    gruppi = []
+
+    for raw in matches:
+        item = normalize_TUG(raw)
+
+        if item.startswith("T"):
+            trasformatori.append(item)
+        elif item.startswith("U"):
+            utenze.append(item)
+        elif item.startswith("G"):
+            gruppi.append(item)
+
+        # Rimuovi dal resto
+        rest = rest.replace(raw, "")
+
+    info_text = rest.strip()
+
+    return (
+        cabina_id,
+        info_text,
+        "; ".join(trasformatori),
+        "; ".join(utenze),
+        "; ".join(gruppi),
+    )
+
+
 
 
 def detect_text(
@@ -1049,7 +1115,7 @@ def detect_text(
 
     # tuning: pad multipliers (left, right, top, bottom)
     #roi_pads = (0.6, 1.6, 0.3, 1.1)
-    roi_pads = (0.6, 5, 0.3, 1.5)
+    roi_pads = (0.3, 5, 0.6, 1.5)
 
     for cab_idx, (_, cab_bbox) in enumerate(tqdm(squares, desc="Processing cabins")):
         roi = expand_region_around_cabina(cab_bbox, img.shape, pads=roi_pads)
@@ -1120,7 +1186,9 @@ def detect_text(
         _, mask = cv2.threshold(roi_gray, 200, 255, cv2.THRESH_BINARY)
         mask = cv2.medianBlur(mask, 3)
         Hm, Wm = mask.shape[:2]
-        max_shift = int(0.20 * Wm)
+        #max_shift = int(0.10 * Wm)
+        max_shift = max(1, int(0.10 * Wm))
+
         col_dark_frac = np.array([np.sum(mask[:, x] == 0) / float(Hm) for x in range(Wm)])
         inv = 255 - mask
         num, labels, stats, centroids = cv2.connectedComponentsWithStats(inv, connectivity=8)
@@ -1213,6 +1281,7 @@ def detect_text(
         sid, conf = extract_inner_id(img, bbox)
         ids_per_square.append((sid.strip(), conf))
 
+    '''
     # associate cabina -> nearest block to its bottom-right
     associations = []
     for i, ((_, bbox), (cabina_id, conf)) in enumerate(zip(squares, ids_per_square)):
@@ -1242,8 +1311,59 @@ def detect_text(
 
     cv2.imwrite(path_out, annotated)
     print(f"✅ Annotazione salvata in {path_out}")
+    '''
 
-    with open(csv_out, "w", newline="", encoding="utf-8") as f:
+
+    # associate cabina -> nearest block to its right
+    associations = []
+    for i, ((_, bbox), (cabina_id, conf)) in enumerate(zip(squares, ids_per_square)):
+        x, y, w, h = bbox
+        cx, cy = x + w // 2, y + h // 2
+        ref_x = x + w   # bordo destro della cabina
+
+        best_idx, best_dist = -1, 1e9
+        best_text = ""
+
+        for j, b in enumerate(blocks_global):
+            bx, by, bw, bh = b["bbox"]
+            bx_center = bx + bw // 2
+            by_center = by + bh // 2
+            bx_left = bx  # margine sinistro
+                
+            # 🔥 nuovo criterio: blocco solo se è a destra della cabina
+            if bx_center > ref_x:
+                #dist = np.hypot(bx_center - cx, by_center - cy)
+                dist = np.hypot(bx_left - cx, by_center - cy)
+
+                if dist < best_dist:
+                    best_idx, best_dist = j, dist
+                    best_text = (b.get("text") or b.get("txt") or "").strip()
+
+        associations.append({
+            "cabina_index": i,
+            "cabina_id": cabina_id,
+            "cabina_conf": float(conf) if conf is not None else 0.0,
+            "info_text": best_text if best_idx != -1 else "",
+        })
+
+        # draw link
+        if best_idx != -1:
+            bx, by, bw, bh = blocks_global[best_idx]["bbox"]
+            bx_center = bx + bw // 2
+            by_center = by + bh // 2
+            cv2.line(annotated, (cx, cy), (bx_center, by_center), (0, 0, 255), 2)
+
+    cv2.imwrite(path_out, annotated)
+    print(f"✅ Annotazione salvata in {path_out}")
+
+
+
+
+
+
+
+    ##### OLD #####
+    with open("outputs/associations_old.csv", "w", newline="", encoding="utf-8") as f:
         #writer = csv.writer(f, quoting=csv.QUOTE_NONE, escapechar='\\')
         writer = csv.writer(f, delimiter=";", quoting=csv.QUOTE_NONE)
 
@@ -1251,8 +1371,6 @@ def detect_text(
         for a in associations:
             info_text = a["info_text"].replace("\n", " ").replace("\r", "").strip().strip('"')
             writer.writerow([a["cabina_index"], a["cabina_id"], f"{a['cabina_conf']:.1f}", info_text])
-
-    print(f"🔗 Collegamenti trovati: {sum(1 for a in associations if a['info_text'])}/{len(associations)}")
 
     results = []
     for a in associations:
@@ -1265,5 +1383,44 @@ def detect_text(
             "cabina_conf": a["cabina_conf"],
             "info_text": a["info_text"],
         })
+    
 
-    return results, annotated
+
+    ##### NEW #####
+    with open(csv_out, "w", newline="", encoding="utf-8") as f:
+        #writer = csv.writer(f, delimiter=";", quoting=csv.QUOTE_NONE)
+        writer = csv.writer(
+        f,
+        delimiter=";",
+        quoting=csv.QUOTE_NONE,
+        escapechar='\\'
+        )
+
+
+        writer.writerow([
+            "cabina_index",
+            "sigla_cabina",
+            "cabina_id",
+            "info_text",
+            "trasformatore",
+            "utenza",
+            "gruppo",
+        ])
+
+        for a in associations:
+            raw_text = a["info_text"].replace("\n", " ").replace("\r", "").strip().strip('"')
+
+            parsed_id, info_text, trasf, ut, gr = parse_info_text(raw_text)
+
+            writer.writerow([
+                a["cabina_index"],
+                a["cabina_id"],   # ← la sigla (es. MB)
+                parsed_id,        # ← DU 10-2-xxxxxx
+                info_text,
+                trasf,
+                ut,
+                gr,
+            ])
+
+        
+    return annotated
