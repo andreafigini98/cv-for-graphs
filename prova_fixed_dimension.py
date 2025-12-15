@@ -16,7 +16,7 @@ from utils.build_networkx_graph import build_graph_from_nodes_edges
 from utils.utilis import clean_squares
 from utils.text_detection import detect_text
 from utils.image_to_black import enhance_text
-
+from utils.check_cabins import load_xlsx_cabins, write_csv
 
 def main():
 
@@ -52,11 +52,10 @@ def main():
 
     edges_list = detect_edges_on_grid(input, grid_points, debug_img=True)
 
-    cabins = detect_text("input_data/enhanced_img.png", triangles, "outputs/annotated.png", "outputs/associations.csv")
+    cabins, associations = detect_text("input_data/enhanced_img.png", triangles, "outputs/annotated.png", "outputs/associations.csv")
 
     print(cabins[0].keys())
     print(cabins[0])
-
 
     build_graph_from_nodes_edges(
         input,
@@ -68,7 +67,12 @@ def main():
         edges_list,
         draw=True,
     )
+  
 
+    cabin_set = load_xlsx_cabins("input_data/DU10-25-100821_26092025-113304.xlsx")
+    print(cabin_set)
+
+    write_csv(associations, cabin_set, "outputs/associations.csv")
 
 
 if __name__ == "__main__":
