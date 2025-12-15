@@ -4,10 +4,14 @@ import matplotlib.pyplot as plt
 import networkx as nx
 from detectors.triangles import _find_centroid_tringle
 
+def bbox_center(bbox):
+    x, y, w, h = bbox
+    return (int(x + w / 2), int(y + h / 2))
+
 
 def build_graph_from_nodes_edges(
     image_path,
-    node_centers,
+    cabins,
     triangle_centrer,
     black_cirles_points,
     hollow_cirles_points,
@@ -30,8 +34,23 @@ def build_graph_from_nodes_edges(
     # coord_to_id = {coord: i for i, coord in enumerate(node_centers)}
 
     # Add regular nodes
-    for i, (x, y) in enumerate([n["center"] for n in node_centers]):
-        G.add_node(i, pos=(x, y), type="node")
+    #for i, (x, y) in enumerate([n["center"] for n in node_centers]):
+    #    G.add_node(i, pos=(x, y), type="node")
+
+    G = nx.Graph()
+
+    # Add CABIN nodes
+    for i, cabin in enumerate(cabins):
+        center = bbox_center(cabin["bbox"])
+
+        G.add_node(
+            i,
+            pos=center,
+            type="cabin",
+            text=cabin.get("info_text") or cabin.get("cabina_id"),
+            bbox=cabin["bbox"],
+        )
+
 
     # Add black circle nodes
     for x, y in black_cirles_points:
@@ -51,12 +70,21 @@ def build_graph_from_nodes_edges(
         )
 
     # breakpoint()
+    '''
     every_node = (
         [n["center"] for n in node_centers]
         + black_cirles_points
         + [d["center"] for d in hollow_cirles_points]
         + [_find_centroid_tringle(t) for t in triangle_centrer]
     )
+    '''
+    every_node = (
+        [bbox_center(c["bbox"]) for c in cabins]
+        + black_cirles_points
+        + [d["center"] for d in hollow_cirles_points]
+        + [_find_centroid_tringle(t) for t in triangle_centrer]
+    )
+
 
     # Create a mapping between coordinates and node IDs
     coord_to_id = {coord: i for i, coord in enumerate(every_node)}
@@ -72,8 +100,33 @@ def build_graph_from_nodes_edges(
         overlay = img.copy()
 
         # Draw nodes
-        for point in node_centers:
-            cv2.circle(overlay, point["center"], 25, (0, 0, 255), -1)
+        #for point in node_centers:
+        #    cv2.circle(overlay, point["center"], 25, (0, 0, 255), -1)
+
+        for cabin in cabins:
+            cv2.circle(
+                overlay,
+                #cabin["square_center"],
+                bbox_center(cabin["bbox"]),
+                25,
+                (0, 0, 255),
+                -1,
+            )
+            label = cabin.get("info_text") or cabin.get("cabina_id")
+
+            if label:
+                cx, cy = bbox_center(cabin["bbox"])
+                cv2.putText(
+                    overlay,
+                    label,
+                    (cx + 10, cy),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.5,
+                    (255, 0, 0),
+                    1,
+                )
+
+
 
         # Draw edges
         for (x1, y1), (x2, y2) in edges_list:
@@ -107,7 +160,8 @@ def build_graph_from_nodes_edges(
         node_types = nx.get_node_attributes(G, "type")
 
         node_groups = {
-            "node": [n for n, t in node_types.items() if t == "node"],
+            #"node": [n for n, t in node_types.items() if t == "node"],
+            "cabin": [n for n, t in node_types.items() if t == "cabin"],
             "black_circle": [n for n, t in node_types.items() if t == "black_circle"],
             "hollow_circle": [n for n, t in node_types.items() if t == "hollow_circle"],
             "triangle": [n for n, t in node_types.items() if t == "triangle"],
@@ -118,6 +172,7 @@ def build_graph_from_nodes_edges(
 
         # Draw each node type separately
         # node_shape in'so^>v<dph8'
+        '''
         nx.draw_networkx_nodes(
             G,
             pos,
@@ -126,7 +181,17 @@ def build_graph_from_nodes_edges(
             node_color="red",
             node_size=200,
             label="Node",
+        '''
+        nx.draw_networkx_nodes(
+            G,
+            pos,
+            nodelist=node_groups["cabin"],
+            node_shape="s",
+            node_color="red",
+            node_size=300,
+            label="Cabin",
         )
+
         nx.draw_networkx_nodes(
             G,
             pos,

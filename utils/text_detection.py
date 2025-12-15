@@ -587,329 +587,6 @@ def compute_cut_x_from_roi(roi, debug_path=None):
 
 
 
-'''
-def detect_text(
-    path_in: str,
-    triangles,
-    path_out: str = "annotated.png",
-    csv_out: str = "associations.csv",
-):
-    """
-    Pipeline aggiornata e coerente con le funzioni che hai nel file.
-    """
-    print("-------- Text Detection Phase ----------")
-
-    img = cv2.imread(path_in)
-    if img is None:
-        raise FileNotFoundError(f"Impossibile aprire {path_in}")
-
-    H, W = img.shape[:2]
-
-    # 2) Trova cabine
-    squares = find_squares_contours_strict(img)
-    print(f"[DBG] Cabine rilevate: {len(squares)}")
-
-    # Convert each triangle into the same tuple format used for squares
-    for tri in triangles:
-        pts = np.array(tri, dtype=np.int32).reshape((-1,1,2))
-        x, y, w, h = cv2.boundingRect(pts)
-        squares.append(("TRIANGLE", (x, y, w, h)))
-
-
-    b, g, r = cv2.split(img)
-
-    # 🔹 Versione per l'OCR, enfatizza i testi blu e rossi
-    gray_boosted = cv2.addWeighted(b, 0.45, r, 0.45, 0)
-    gray_boosted = cv2.addWeighted(gray_boosted, 1.0, g, 0.15, 0)
-    gray_boosted = cv2.normalize(gray_boosted, None, 0, 255, cv2.NORM_MINMAX)
-
-    # gray_boosted = cv2.addWeighted(b, 0.45, r, 0.45, 0)
-    # gray_boosted = cv2.addWeighted(gray_boosted, 1.0, g, 0.15, 0)
-
-    # 🔹 aumenta contrasto
-    gray_boosted = cv2.normalize(gray_boosted, None, 0, 255, cv2.NORM_MINMAX)
-
-    # 🔹 leggero sharpening per evidenziare le scritte colorate
-    kernel_sharp = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
-    gray_ocr = cv2.filter2D(gray_boosted, -1, kernel_sharp)
-
-    # (Niente threshold binario qui, lo applicheremo più avanti nei singoli blocchi OCR)
-    gray_ocr = gray_boosted.copy()
-
-    # OCR globale ad alto recall
-    # text_blocks = ocr_blocks_recall(gray_ocr)
-
-    del b, g, r, gray_boosted
-    gc.collect()
-
-    # Try only if there are at least 8 gb
-    if get_available_memory_gb() > 8:
-        # ONE SHOT, very memory intensive
-        # MAY CRASH!!!
-        print(f"{get_available_memory_gb()} GB of memory, trying oneshot")
-        text_blocks = easyocr_blocks(gray_ocr)
-    else:
-        # TILED, SLOWER BUT LESS MEMORY NEEDE
-        print(f"{get_available_memory_gb()} GB of memory, going for the tiling")
-        reader = easyocr.Reader(["en", "it"], gpu=False)  # CPU to save memory
-        text_blocks = easyocr_blocks_tiled(
-            gray_ocr, reader, tile_size=(1000, 1000), overlap=50
-        )
-    print(f"[DBG] Blocchi OCR trovati: {len(text_blocks)}")
-
-    print(f"[DBG] Blocchi testuali OCR: {len(text_blocks)}")
-
-    # rimuovi testo interno alle cabine
-    text_blocks = remove_text_inside_cabins(
-        text_blocks, squares, margin=8, center_only=True, overlap_thresh=0.25
-    )
-
-    # 4) Consolidamento blocchi testuali globali
-    line_boxes = merge_lines_morph(
-        text_blocks, (H, W), hor_kernel_w_frac=0.005, min_area=90
-    )
-
-
-    blocks_global = group_line_boxes_into_blocks(
-        line_boxes,
-        max_v_gap_frac=0.25,
-        min_h_overlap_frac=0.9,
-        max_x_shift_frac=0.09, # prima 0.12
-        max_lines_per_block=5,
-    )
-
-    # | Tipo di fusione indesiderata                 | Cosa modificare        | Valore consigliato |
-    # | -------------------------------------------- | ---------------------- | ------------------ |
-    # | Blocchi vicini orizzontalmente fusi          | `hor_kernel_w_frac` ↓  | 0.008              |
-    # | Blocchi uno sopra l’altro fusi               | `max_v_gap_frac` ↓     | 0.35               |
-    # | Blocchi con disallineamento orizzontale fusi | `min_h_overlap_frac` ↑ | 0.8–0.9            |
-
-    # blocks_global = remove_blocks_overlapping_cabins(blocks_global, squares, overlap_thresh=0.30)
-
-    print(f"[DBG] Blocchi consolidati: {len(blocks_global)}")
-
-    for block in blocks_global:
-        x, y, w, h = block["bbox"]
-
-        inside_texts = []
-        for tb in text_blocks:
-            if is_inside(tb["bbox"], block["bbox"]):
-                inside_texts.append(
-                    (tb.get("text") or tb.get("ocr_text") or "").strip()
-                )
-        block["text"] = " ".join(inside_texts).strip()
-
-    # 🔹 OCR individuale su ciascun blocco consolidato (salviamo testo dentro ogni blocco)
-    # for idx, blk in enumerate(blocks_global):
-    for idx, blk in tqdm(enumerate(blocks_global), desc="Single block OCR"):
-        x, y, w, h = blk["bbox"]
-
-        # se bbox invalido skip
-        if w <= 0 or h <= 0:
-            blk["ocr_text"] = ""
-            continue
-
-        # 🔹 1. Calcola margini con leggera riduzione a sinistra (evita bordo cabina)
-        pad_top, pad_bottom, pad_right, pad_left = 1, 1, 1, 1
-
-        # 🔹 taglio extra per evitare bordi delle cabine
-        # shift_left = 1  # o 0.02 * w
-        x0 = max(0, x + pad_left)
-        y0 = max(0, y - pad_top)
-        x1 = min(W, x + w + pad_right)
-        y1 = min(H, y + h + pad_bottom)
-
-        if x1 <= x0 or y1 <= y0:
-            blk["ocr_text"] = ""
-            continue
-
-        roi = img[int(y0) : int(y1), int(x0) : int(x1)]
-
-        
-        # =============================
-        #  FIX: rimuovere bordo a sinistra se il pixel (0,0) è scuro
-        # =============================
-
-        # Esegui il calcolo e taglia
-        cut_x = compute_cut_x_from_roi(roi, debug_path=None)
-        if cut_x > 0:
-            roi = roi[:, cut_x:]
-
-
-        roi_gray_check = cv2.cvtColor(roi, cv2.COLOR_BGR2GRAY)
-
-        threshold_dark = 150   # pixel sotto questo valore è considerato nero/scuro
-        max_shift = int(0.20 * roi.shape[1])   # NON tagliare oltre il 20% della larghezza
-
-        shift = 0
-        while shift < max_shift:
-            if roi_gray_check[0, shift] > threshold_dark:
-                break
-            shift += 1
-
-        # Se serve, taglia la parte sinistra
-        if shift > 0:
-            roi = roi[:, shift:]
-
-
-
-        # --------------------------------------------------------------------------------------------------------
-
-        # --- 1. Upscaling
-        roi_up = cv2.resize(roi, None, fx=2.0, fy=2.0, interpolation=cv2.INTER_CUBIC)
-
-        # --- 2. Grigio + normalize + contrast
-        roi_gray = cv2.cvtColor(roi_up, cv2.COLOR_BGR2GRAY)
-        roi_gray = cv2.normalize(roi_gray, None, 0, 255, cv2.NORM_MINMAX)
-        roi_gray = cv2.convertScaleAbs(roi_gray, alpha=1.6, beta=-30)
-
-        # --- 3. Threshold (testo nero su bianco)
-        _, roi_bin = cv2.threshold(
-            roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
-        )
-
-        # --- 4. Pulizia: median blur + dilate per chiudere buchi
-        roi_bin = cv2.medianBlur(roi_bin, 3)
-        kernel = np.ones((2, 2), np.uint8)
-        roi_bin = cv2.dilate(roi_bin, kernel, iterations=1)
-
-        # salva ritaglio pulito per debug
-        cv2.imwrite(f"outputs/img/clean_block_{idx:02d}.png", roi_bin)
-
-        # --- 5. OCR Tesseract
-        custom_config = r"--psm 6 -c preserve_interword_spaces=1 -c textord_space_size_is_variable=1"
-        text = pytesseract.image_to_string(
-            roi_bin, config=custom_config, lang="ita+eng"
-        )
-
-        # --- 6. Pulizia testo
-        text = text.strip()
-        text = re.sub(r"\s{2,}", " ", text)
-        text = re.sub(r"([A-Z])([0-9])", r"\1 \2", text)
-        text = re.sub(r"([0-9])([A-Z])", r"\1 \2", text)
-        text = re.sub(r"([.,)])([A-Z0-9])", r"\1 \2", text)
-        text = re.sub(r"([A-Z0-9])([(])", r"\1 \2", text)
-        text = re.sub(r"\s+", " ", text).strip()
-
-        blk["ocr_text"] = text
-        # print(f"[OCR-CLEAN] Block {idx}: {repr(text)}")
-
-    # ========== Ora assegniamo block['text'] dal 'ocr_text' ottenuto ==========
-    for block in blocks_global:
-        block["text"] = block.get("ocr_text", "").strip()
-
-    # debug: disegna i blocchi globali consolidati
-    ann_blocks = img.copy()
-    for b in blocks_global:
-        bx, by, bw, bh = b["bbox"]
-        cv2.rectangle(ann_blocks, (bx, by), (bx + bw, by + bh), (0, 255, 0), 2)
-
-    # 5) Disegna blocchi testuali (verde)
-    annotated = img.copy()
-    for b in blocks_global:
-        bx, by, bw, bh = b["bbox"]
-        cv2.rectangle(annotated, (bx, by), (bx + bw, by + bh), (0, 255, 0), 2)
-
-    # 6) Disegna cabine (arancione) e label C{i}
-    for i, (_, bbox) in enumerate(squares):
-        x, y, w, h = bbox
-        cv2.rectangle(annotated, (x, y), (x + w, y + h), (0, 140, 255), 2)
-        cv2.putText(
-            annotated,
-            f"C{i}",
-            (x, y - 5),
-            cv2.FONT_HERSHEY_SIMPLEX,
-            0.5,
-            (0, 140, 255),
-            1,
-        )
-
-    # 7) Estrai ID interni delle cabine
-    ids_per_square = []
-    for _, bbox in squares:
-        sid, conf = extract_inner_id(img, bbox)
-        ids_per_square.append((sid.strip(), conf))
-
-    # ===================
-    # 8) ASSOCIAZIONE CABINA -> BLOCCO (con vincoli spaziali orizzontali)
-    # ===================
-    associations = []
-    # for i, ((_, bbox), (cabina_id, conf)) in enumerate(zip(squares, ids_per_square)):
-    for i, ((_, bbox), (cabina_id, conf)) in tqdm(
-        enumerate(zip(squares, ids_per_square)), desc="Text-Cabins association"
-    ):
-        x, y, w, h = bbox
-
-        cx, cy = x + w // 2, y + h // 2
-        ref_x, ref_y = x + w, y + h  # angolo in basso a destra della cabina
-
-        best_idx, best_dist = -1, 1e9
-        best_text = ""
-
-        for j, b in enumerate(blocks_global):
-            bx, by, bw, bh = b["bbox"]
-            bx_center, by_center = bx + bw // 2, by + bh // 2
-
-            # deve essere davvero in basso a destra rispetto alla cabina
-            if bx_center > ref_x and by_center > ref_y:
-                dist = np.hypot(bx_center - ref_x, by_center - ref_y)
-                if dist < best_dist:
-                    best_idx, best_dist = j, dist
-                    best_text = (b.get("text") or b.get("txt") or "").strip()
-
-        associations.append(
-            {
-                "cabina_index": i,
-                "cabina_id": cabina_id,
-                "cabina_conf": float(conf) if conf is not None else 0.0,
-                "info_text": best_text if best_idx != -1 else "",
-            }
-        )
-
-        if best_idx != -1:
-            bx, by, bw, bh = blocks_global[best_idx]["bbox"]
-            bx_center, by_center = bx + bw // 2, by + bh // 2
-            cv2.line(annotated, (cx, cy), (bx_center, by_center), (0, 0, 255), 2)
-
-    # salva immagine e CSV come prima
-    cv2.imwrite(path_out, annotated)
-    print(f"✅ Annotazione salvata in {path_out}")
-
-    with open(csv_out, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f, delimiter=";", quoting=csv.QUOTE_NONE)
-        writer.writerow(["cabina_index", "cabina_id", "cabina_conf", "info_text"])
-        for a in associations:
-            writer.writerow(
-                [
-                    a["cabina_index"],
-                    a["cabina_id"],
-                    f"{a['cabina_conf']:.1f}",
-                    a["info_text"].replace("\n", " ").replace("\r", "").strip(),
-                ]
-            )
-    print(f"✅ CSV salvato in {csv_out}")
-    print(
-        f"🔗 Collegamenti trovati: {sum(1 for a in associations if a['info_text'])}/{len(associations)}"
-    )
-
-    results = []
-    for a in associations:
-        i = a["cabina_index"]
-        _, bbox = squares[i]
-        results.append(
-            {
-                "cabina_index": i,
-                "bbox": bbox,
-                "cabina_id": a["cabina_id"],
-                "cabina_conf": a["cabina_conf"],
-                "info_text": a["info_text"],
-            }
-        )
-
-    return results, annotated
-'''
-
-
 # Assumed available functions from your codebase:
 # - find_squares_contours_strict(img, debug_prefix=None) -> list of (approx, (x,y,w,h))
 # - easyocr_blocks / easyocr_blocks_tiled -> returns list of {"bbox": [x,y,w,h], "ocr_text": str, "conf": float}
@@ -1046,6 +723,12 @@ def parse_info_text(s):
 
 
 
+def square_center(bbox):
+    x, y, w, h = bbox
+    return (x + w / 2, y + h / 2)
+
+
+
 
 def detect_text(
     path_in: str,
@@ -1070,11 +753,20 @@ def detect_text(
     squares = find_squares_contours_strict(img, debug_prefix="debug/test")
     print(f"[DBG] Cabine rilevate: {len(squares)}")
 
+
     # Convert each triangle into the same tuple format used for squares
     for tri in triangles:
         pts = np.array(tri, dtype=np.int32).reshape((-1,1,2))
         x, y, w, h = cv2.boundingRect(pts)
         squares.append(("TRIANGLE", (x, y, w, h)))
+
+    squares = sorted(
+        squares,
+        key=lambda s: (
+            square_center(s[1])[1],
+            square_center(s[1])[0],
+        ),
+    )
 
     # 2) Prepara immagine per OCR (la tua pipeline)
     b, g, r = cv2.split(img)
@@ -1270,10 +962,34 @@ def detect_text(
         bx, by, bw, bh = b["bbox"]
         cv2.rectangle(annotated, (bx, by), (bx + bw, by + bh), (0, 255, 0), 2)
 
+    '''
     for i, (_, bbox) in enumerate(squares):
         x, y, w, h = bbox
         cv2.rectangle(annotated, (x, y), (x + w, y + h), (0, 140, 255), 2)
         cv2.putText(annotated, f"C{i}", (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 140, 255), 1)
+    '''
+
+    for i, (_, bbox) in enumerate(squares, start=1):
+        x, y, w, h = bbox
+        cx, cy = square_center(bbox)
+
+        cv2.rectangle(annotated, (x, y), (x + w, y + h), (0, 140, 255), 2)
+        # posizione esterna: in alto a sinistra della cabina
+        tx = max(0, x - 25)
+        ty = max(15, y - 10)
+
+        cv2.putText(
+            annotated,
+            f"C{i}",
+            (tx, ty),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.6,
+            (0, 0, 255),
+            2,
+            cv2.LINE_AA,
+        )
+
+
 
     # extract ids
     ids_per_square = []
@@ -1281,37 +997,6 @@ def detect_text(
         sid, conf = extract_inner_id(img, bbox)
         ids_per_square.append((sid.strip(), conf))
 
-    '''
-    # associate cabina -> nearest block to its bottom-right
-    associations = []
-    for i, ((_, bbox), (cabina_id, conf)) in enumerate(zip(squares, ids_per_square)):
-        x, y, w, h = bbox
-        cx, cy = x + w // 2, y + h // 2
-        ref_x, ref_y = x + w, y + h
-        best_idx, best_dist = -1, 1e9
-        best_text = ""
-        for j, b in enumerate(blocks_global):
-            bx, by, bw, bh = b["bbox"]
-            bx_center, by_center = bx + bw // 2, by + bh // 2
-            if bx_center > ref_x and by_center > ref_y:
-                dist = np.hypot(bx_center - ref_x, by_center - ref_y)
-                if dist < best_dist:
-                    best_idx, best_dist = j, dist
-                    best_text = (b.get("text") or b.get("txt") or "").strip()
-        associations.append({
-            "cabina_index": i,
-            "cabina_id": cabina_id,
-            "cabina_conf": float(conf) if conf is not None else 0.0,
-            "info_text": best_text if best_idx != -1 else "",
-        })
-        if best_idx != -1:
-            bx, by, bw, bh = blocks_global[best_idx]["bbox"]
-            bx_center, by_center = bx + bw // 2, by + bh // 2
-            cv2.line(annotated, (cx, cy), (bx_center, by_center), (0, 0, 255), 2)
-
-    cv2.imwrite(path_out, annotated)
-    print(f"✅ Annotazione salvata in {path_out}")
-    '''
 
 
     # associate cabina -> nearest block to its right
@@ -1423,4 +1108,4 @@ def detect_text(
             ])
 
         
-    return annotated
+    return results

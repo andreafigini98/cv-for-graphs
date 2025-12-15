@@ -52,9 +52,16 @@ def main():
 
     edges_list = detect_edges_on_grid(input, grid_points, debug_img=True)
 
+    cabins = detect_text("input_data/enhanced_img.png", triangles, "outputs/annotated.png", "outputs/associations.csv")
+
+    print(cabins[0].keys())
+    print(cabins[0])
+
+
     build_graph_from_nodes_edges(
         input,
-        squares,
+        #squares,
+        cabins,
         triangles,
         black_cirles_points,
         hollow_cirles_points,
@@ -62,10 +69,7 @@ def main():
         draw=True,
     )
 
-    # 🔹 Migliora contrasto testo
-    #enhance_text(input, "input_data/enhanced_img.png")
-    # !!! TODO: enhance_text non funziona bene con immagini jpg
-    detect_text("input_data/enhanced_img.png", triangles, "outputs/annotated.png", "outputs/associations.csv")
+
 
 if __name__ == "__main__":
     main()

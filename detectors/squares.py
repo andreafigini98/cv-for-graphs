@@ -225,3 +225,5 @@ def detect_squares_with_letters(
 
     print(len(squares), "squares with letters detected.")
     return squares
+
+
