@@ -1,10 +1,10 @@
-import pandas as pd
 import re
 import csv
+from openpyxl import load_workbook
+import math
 
 
-
-
+'''
 def load_xlsx_cabins(xlsx_path):
     df = pd.read_excel(xlsx_path, header=None, dtype=str)
 
@@ -18,6 +18,30 @@ def load_xlsx_cabins(xlsx_path):
     }
 
     return cabin_set
+'''
+
+
+def load_xlsx_cabins(path_xlsx):
+    wb = load_workbook(path_xlsx, data_only=True)
+    ws = wb.active
+
+    cabins = []
+
+    # seconda colonna = B
+    # righe pari a partire dalla 10
+    for row in range(10, ws.max_row + 1, 2):
+        val = ws.cell(row=row, column=2).value
+
+        if val is None:
+            continue
+
+        # scarta NaN
+        if isinstance(val, float) and math.isnan(val):
+            continue
+
+        cabins.append(str(val).strip())
+
+    return cabins
 
 
 
@@ -84,9 +108,9 @@ def parse_info_text(s):
     return (
         cabina_id,
         info_text,
-        "; ".join(trasformatori),
-        "; ".join(utenze),
-        "; ".join(gruppi),
+        " \\ ".join(trasformatori),
+        " \\ ".join(utenze),
+        " \\ ".join(gruppi),
     )
 
 
@@ -94,26 +118,39 @@ def parse_info_text(s):
 
 
 
-def normalize_single_cabin_id(s: str) -> str:
-    if not isinstance(s, str):
-        return ""
 
-    s = s.upper().strip()
 
-    # rimuove suffissi tipo _TR01, _QUALCOSA
-    s = re.sub(r"_[A-Z0-9]+$", "", s)
 
-    # uniforma separatori
-    s = s.replace("-", " ").replace("_", " ")
-    s = re.sub(r"\s+", " ", s)
 
-    # pattern: 2 lettere + 3 blocchi numerici
-    m = re.search(r"\b([A-Z]{2})\s*(\d+)\s*(\d+)\s*(\d+)\b", s)
+def normalize_single_cabin_id(raw):
+    """
+    DU102-262241_TR01 → DU 10-2-262241
+    MB203-123456     → MB 20-3-123456
+    """
+
+    if not isinstance(raw, str):
+        return None
+
+    s = raw.upper().strip()
+
+    # elimina suffissi tipo _TR01
+    s = s.split("_")[0]
+
+    # pattern: 2 lettere + 3 cifre + "-" + cifre
+    m = re.match(r"^([A-Z]{2})(\d{3})-(\d+)$", s)
     if not m:
-        return ""
+        return None
 
-    prefix, a, b, c = m.groups()
-    return f"{prefix} {a}-{b}-{c}"
+    prefix = m.group(1)   # DU
+    num3 = m.group(2)     # 102
+    tail = m.group(3)     # 262241
+
+    part1 = num3[:2]      # 10
+    part2 = num3[2]       # 2
+
+    return f"{prefix} {part1}-{part2}-{tail}"
+
+
 
 
 
@@ -126,7 +163,10 @@ def normalize_cabin_id(xlsx_cabin_list):
     normalized = set()
 
     for s in xlsx_cabin_list:
+        #print("Codice da normalizzare: ", s)
         norm = normalize_single_cabin_id(s)
+        #print("Codice normalizzato: ", norm)
+
         if norm:
             normalized.add(norm)
         if not norm:
@@ -134,6 +174,8 @@ def normalize_cabin_id(xlsx_cabin_list):
 
 
     return normalized
+
+
 
 
 

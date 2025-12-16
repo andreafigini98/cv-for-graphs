@@ -16,7 +16,7 @@ from utils.build_networkx_graph import build_graph_from_nodes_edges
 from utils.utilis import clean_squares
 from utils.text_detection import detect_text
 from utils.image_to_black import enhance_text
-from utils.check_cabins import load_xlsx_cabins, write_csv
+from utils.check_cabins import load_xlsx_cabins, write_csv, normalize_cabin_id
 
 def main():
 
@@ -70,7 +70,9 @@ def main():
   
 
     cabin_set = load_xlsx_cabins("input_data/DU10-25-100821_26092025-113304.xlsx")
-    print(cabin_set)
+    print(type(cabin_set), cabin_set[:5])
+    #new_cabin_set = normalize_cabin_id(cabin_set)
+    #print(new_cabin_set)
 
     write_csv(associations, cabin_set, "outputs/associations.csv")
 
