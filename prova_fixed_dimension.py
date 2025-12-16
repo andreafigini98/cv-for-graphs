@@ -16,10 +16,10 @@ from utils.build_networkx_graph import build_graph_from_nodes_edges
 from utils.utilis import clean_squares
 from utils.text_detection import detect_text
 from utils.image_to_black import enhance_text
-from utils.check_cabins import load_xlsx_cabins, write_csv, normalize_cabin_id
+from utils.check_cabins import load_xlsx_cabins, write_csv, normalize_cabin_id, load_competenze_xlsx, assign_competenze
 
 def main():
-
+    
     input = "input_data/hard.jpg"
 
     img = preprocess(input)
@@ -67,13 +67,20 @@ def main():
         edges_list,
         draw=True,
     )
-  
+    
 
     cabin_set = load_xlsx_cabins("input_data/DU10-25-100821_26092025-113304.xlsx")
     print(type(cabin_set), cabin_set[:5])
+
+    set_comp_e, set_comp_d = load_competenze_xlsx("input_data/PUNTI DI CONFINE.xlsx", debug=False)
+    print(type(set_comp_e), list(set_comp_e)[:5])
+    print(type(set_comp_d), list(set_comp_d)[:5])
+
+
     #new_cabin_set = normalize_cabin_id(cabin_set)
     #print(new_cabin_set)
 
+    associations = assign_competenze(associations, set_comp_e, set_comp_d)
     write_csv(associations, cabin_set, "outputs/associations.csv")
 
 

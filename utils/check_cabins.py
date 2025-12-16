@@ -4,21 +4,68 @@ from openpyxl import load_workbook
 import math
 
 
-'''
-def load_xlsx_cabins(xlsx_path):
-    df = pd.read_excel(xlsx_path, header=None, dtype=str)
 
-    # seconda colonna, da riga 10, solo righe pari
-    raw_codes = df.iloc[9:, 1].iloc[::2]
+from openpyxl import load_workbook
 
-    cabin_set = {
-        normalize_cabin_id(code)
-        for code in raw_codes
-        if normalize_cabin_id(code)
-    }
+def load_competenze_xlsx(path_xlsx, debug=True):
+    wb = load_workbook(path_xlsx, data_only=True)
 
-    return cabin_set
-'''
+    if debug:
+        print("📘 Fogli disponibili:", wb.sheetnames)
+
+    ws = wb.active
+
+    if debug:
+        print("📄 Foglio attivo:", ws.title)
+        print("📐 Max row:", ws.max_row)
+
+    comp_e_raw = []
+    comp_d_raw = []
+
+    for row in range(4, ws.max_row + 1):
+        val_g = ws[f"G{row}"].value
+        val_s = ws[f"S{row}"].value
+
+        if debug and row < 15:  # stampiamo solo le prime righe
+            print(f"Riga {row} | G: {val_g!r} | S: {val_s!r}")
+
+        if isinstance(val_g, str) and val_g.strip():
+            comp_e_raw.append(val_g.strip())
+
+        if isinstance(val_s, str) and val_s.strip():
+            comp_d_raw.append(val_s.strip())
+
+    if debug:
+        print("📥 Raw competenza E (prime 5):", comp_e_raw[:5])
+        print("📥 Raw competenza D (prime 5):", comp_d_raw[:5])
+        print("📊 Totale raw E:", len(comp_e_raw))
+        print("📊 Totale raw D:", len(comp_d_raw))
+
+    # Normalizzazione
+    comp_e_norm = set()
+    comp_d_norm = set()
+
+    for s in comp_e_raw:
+        norm = normalize_single_cabin_id(s)
+        if norm:
+            comp_e_norm.add(norm)
+        elif debug:
+            print("⚠️ Codice E non riconosciuto:", repr(s))
+
+    for s in comp_d_raw:
+        norm = normalize_single_cabin_id(s)
+        if norm:
+            comp_d_norm.add(norm)
+        elif debug:
+            print("⚠️ Codice D non riconosciuto:", repr(s))
+
+    if debug:
+        print("✅ Competenza E normalizzata (prime 5):", list(comp_e_norm)[:5])
+        print("✅ Competenza D normalizzata (prime 5):", list(comp_d_norm)[:5])
+
+    return comp_e_norm, comp_d_norm
+
+
 
 
 def load_xlsx_cabins(path_xlsx):
@@ -121,7 +168,7 @@ def parse_info_text(s):
 
 
 
-
+'''
 def normalize_single_cabin_id(raw):
     """
     DU102-262241_TR01 → DU 10-2-262241
@@ -149,6 +196,35 @@ def normalize_single_cabin_id(raw):
     part2 = num3[2]       # 2
 
     return f"{prefix} {part1}-{part2}-{tail}"
+'''
+
+
+
+
+import re
+
+def normalize_single_cabin_id(s: str) -> str:
+    """
+    Estrae e normalizza il primo codice cabina trovato nel testo
+    nel formato: AA 10-2-262241
+    """
+    if not isinstance(s, str):
+        return ""
+
+    s = s.upper()
+
+    # sostituiamo separatori strani con "-"
+    s = s.replace(".", "-")
+
+    # regex robusta: prende il codice ovunque si trovi
+    pattern = r"([A-Z]{2})\s*(\d{2})-(\d)-(\d{6})"
+    m = re.search(pattern, s)
+
+    if not m:
+        return ""
+
+    return f"{m.group(1)} {m.group(2)}-{m.group(3)}-{m.group(4)}"
+
 
 
 
@@ -178,6 +254,39 @@ def normalize_cabin_id(xlsx_cabin_list):
 
 
 
+def assign_competenze(associations, comp_e_set, comp_d_set):
+    """
+    Aggiunge:
+      - competenza_e
+      - competenza_d
+
+    Solo per cabine con in_xlsx == False
+    """
+    
+    for a in associations:
+        a["competenza_e"] = ""
+        a["competenza_d"] = ""
+
+        if a.get("in_xlsx") is True:
+            continue
+
+        parsed_id = a.get("parsed_id") or a.get("cabina_id")
+        norm_id = normalize_single_cabin_id(parsed_id)
+
+        if not norm_id:
+            continue
+
+        if norm_id in comp_e_set:
+            a["competenza_e"] = True
+            a["competenza_d"] = False
+
+        elif norm_id in comp_d_set:
+            a["competenza_e"] = False
+            a["competenza_d"] = True
+
+    return associations
+
+
 
 
 def write_csv(associations, xlsx_cabin_set, csv_out: str = "associations.csv"):
@@ -194,46 +303,6 @@ def write_csv(associations, xlsx_cabin_set, csv_out: str = "associations.csv"):
 
 
     ##### NEW #####
-
-    '''
-    with open(csv_out, "w", newline="", encoding="utf-8") as f:
-        #writer = csv.writer(f, delimiter=";", quoting=csv.QUOTE_NONE)
-        writer = csv.writer(
-        f,
-        delimiter=";",
-        quoting=csv.QUOTE_NONE,
-        escapechar='\\'
-        )
-
-
-        writer.writerow([
-            "cabina_index",
-            "sigla_cabina",
-            "cabina_id",
-            "info_text",
-            "trasformatore",
-            "utenza",
-            "gruppo",
-            "in_xlsx",
-        ])
-
-        for a in associations:
-            raw_text = a["info_text"].replace("\n", " ").replace("\r", "").strip().strip('"')
-
-            parsed_id, info_text, trasf, ut, gr = parse_info_text(raw_text)
-
-            writer.writerow([
-                a["cabina_index"],
-                a["cabina_id"],   # ← la sigla (es. MB)
-                parsed_id,        # ← DU 10-2-xxxxxx
-                info_text,
-                trasf,
-                ut,
-                gr,
-            ])
-
-    '''
-
     new_cabin_set = normalize_cabin_id(xlsx_cabin_set)
 
     with open(csv_out, "w", newline="", encoding="utf-8") as f:
@@ -253,6 +322,8 @@ def write_csv(associations, xlsx_cabin_set, csv_out: str = "associations.csv"):
             "utenza",
             "gruppo",
             "in_xlsx",
+            "competenza_e",
+            "competenza_d",
         ])
 
         for a in associations:
@@ -270,5 +341,7 @@ def write_csv(associations, xlsx_cabin_set, csv_out: str = "associations.csv"):
                 trasf,
                 ut,
                 gr,
-                in_xlsx,  # 1 / 0
+                in_xlsx,  
+                a.get("competenza_e", ""),
+                a.get("competenza_d", ""),
             ])
