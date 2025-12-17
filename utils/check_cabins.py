@@ -99,28 +99,44 @@ def load_xlsx_cabins(path_xlsx):
 
 
 
-
 def normalize_single_cabin_id(s: str) -> str:
     """
-    Estrae e normalizza il primo codice cabina trovato nel testo
-    nel formato: AA 10-2-262241
+    Normalizza un codice cabina in formato canonico:
+    AA 10-2-262241
+
+    Gestisce:
+    - DU40-2-453048
+    - DU102-134210_TR01
+    - DU102-134210
+    - DU40.2.453048
     """
     if not isinstance(s, str):
         return ""
 
-    s = s.upper()
+    s = s.upper().strip()
 
-    # sostituiamo separatori strani con "-"
+    # 1️⃣ pulizia base
     s = s.replace(".", "-")
+    s = re.sub(r"_?TR\d+", "", s)      # rimuove _TR01, TR02, ecc
+    s = re.sub(r"\s+", " ", s)
 
-    # regex robusta: prende il codice ovunque si trovi
-    pattern = r"([A-Z]{2})\s*(\d{2})-(\d)-(\d{6})"
-    m = re.search(pattern, s)
+    # 2️⃣ FORMATO A: DU40-2-453048
+    m = re.search(r"([A-Z]{2})\s*(\d{2})-(\d)-(\d{6})", s)
+    if m:
+        return f"{m.group(1)} {m.group(2)}-{m.group(3)}-{m.group(4)}"
 
-    if not m:
-        return ""
+    # 3️⃣ FORMATO B: DU102-134210  → 10-2
+    m = re.search(r"([A-Z]{2})\s*(\d{3})-(\d{6})", s)
+    if m:
+        aa = m.group(1)
+        zone = m.group(2)[:2]   # prime 2 cifre
+        sub = m.group(2)[2]     # terza cifra
+        code = m.group(3)
+        return f"{aa} {zone}-{sub}-{code}"
 
-    return f"{m.group(1)} {m.group(2)}-{m.group(3)}-{m.group(4)}"
+    # 4️⃣ non riconosciuto
+    return ""
+
 
 
 
@@ -131,28 +147,27 @@ def normalize_single_cabin_id(s: str) -> str:
 def normalize_cabin_id(xlsx_cabin_list):
     """
     Input: lista codici XLSX
-    Output: set di codici normalizzati stile 'XX a-b-c'
+    Output: set di codici normalizzati stile 'AA 10-2-262241'
     """
     normalized = set()
 
     for s in xlsx_cabin_list:
-        #print("Codice da normalizzare: ", s)
         norm = normalize_single_cabin_id(s)
-        #print("Codice normalizzato: ", norm)
 
         if norm:
             normalized.add(norm)
-        if not norm:
+        else:
             print(f"⚠️ Codice XLSX non riconosciuto: {s}")
-
 
     return normalized
 
 
 
 
+
 def assign_competenze(associations, set_comp_e, set_comp_d, debug=True):
 
+    
     for i, a in enumerate(associations):
 
         raw_id = a.get("parsed_id")
@@ -230,3 +245,70 @@ def write_csv(associations, xlsx_cabin_set, csv_out: str = "associations.csv"):
                 a.get("competenza_e", ""),
                 a.get("competenza_d", ""),
             ])
+
+
+
+
+
+
+from openpyxl import Workbook
+from openpyxl.styles import PatternFill
+
+def write_xlsx_colored(associations, out_xlsx):
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "associations"
+
+    # colori tenui
+    FILL_TRUE  = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
+    FILL_FALSE = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")
+
+    headers = [
+        "cabina_index",
+        "sigla_cabina",
+        "cabina_id",
+        "info_text",
+        "trasformatore",
+        "utenza",
+        "gruppo",
+        "in_xlsx",
+        "competenza_e",
+        "competenza_d",
+    ]
+
+    ws.append(headers)
+
+    for a in associations:
+        row = [
+            a.get("cabina_index"),
+            a.get("cabina_id"),
+            a.get("parsed_id"),
+            a.get("info_text_clean", ""),
+            a.get("trasformatore", ""),
+            a.get("utenza", ""),
+            a.get("gruppo", ""),
+            a.get("in_xlsx"),
+            a.get("competenza_e"),
+            a.get("competenza_d"),
+        ]
+
+        ws.append(row)
+        r = ws.max_row
+
+        # colonne booleane (1-based)
+        bool_cols = {
+            8: a.get("in_xlsx"),
+            9: a.get("competenza_e"),
+            10: a.get("competenza_d"),
+        }
+
+        for col_idx, val in bool_cols.items():
+            cell = ws.cell(row=r, column=col_idx)
+            if val is True:
+                cell.fill = FILL_TRUE
+            elif val is False:
+                cell.fill = FILL_FALSE
+            # None → lasciamo bianco (come richiesto)
+
+    wb.save(out_xlsx)
+    print(f"✅ XLSX colorato salvato in {out_xlsx}")
