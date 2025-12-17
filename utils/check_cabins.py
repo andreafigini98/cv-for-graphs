@@ -97,111 +97,8 @@ def load_xlsx_cabins(path_xlsx):
 
 
 
-def normalize_TUG(s):
-    if not s:
-        return ""
-
-    # 1. togli gli spazi tra lettera e numero
-    s = re.sub(r"([TUG])\s+", r"\1", s)
-
-    # 2. se c'è una O dopo la lettera → è uno 0
-    s = re.sub(r"([TUG])O(\d)", lambda m: m.group(1) + "0" + m.group(2), s)
-
-    # 3. TO 1 → T01
-    s = re.sub(r"([TUG])\s*O\s*(\d)", lambda m: m.group(1) + "0" + m.group(2), s)
-
-    # 4. spazi residui
-    return s.strip()
 
 
-
-
-def parse_info_text(s):
-    original = s.strip()
-
-    # --- 1) Cabina ID generale (AA 10-2-123456)
-    cabina_pattern = r"([A-Z]{2}\s*\d{1,2}-\d-\d{6})"
-    cabina_match = re.search(cabina_pattern, original)
-    cabina_id = cabina_match.group(1).strip() if cabina_match else ""
-
-    rest = original[len(cabina_id):].strip() if cabina_id else original
-
-    # --- 2) Estrarre tutti i T/U/G (anche multipli)
-    #TUG_PATTERN = r"([TUG]\s*[0O]?\d+\s*\([^)]*\))"
-    TUG_PATTERN = r"([TUG]O?\s*\d+\s*\([^)]*\))"
-
-    matches = re.findall(TUG_PATTERN, rest)
-
-    # Normalizza e classifica
-    trasformatori = []
-    utenze = []
-    gruppi = []
-
-    for raw in matches:
-        item = normalize_TUG(raw)
-
-        if item.startswith("T"):
-            trasformatori.append(item)
-        elif item.startswith("U"):
-            utenze.append(item)
-        elif item.startswith("G"):
-            gruppi.append(item)
-
-        # Rimuovi dal resto
-        rest = rest.replace(raw, "")
-
-    info_text = rest.strip()
-
-    return (
-        cabina_id,
-        info_text,
-        " \\ ".join(trasformatori),
-        " \\ ".join(utenze),
-        " \\ ".join(gruppi),
-    )
-
-
-
-
-
-
-
-
-
-'''
-def normalize_single_cabin_id(raw):
-    """
-    DU102-262241_TR01 → DU 10-2-262241
-    MB203-123456     → MB 20-3-123456
-    """
-
-    if not isinstance(raw, str):
-        return None
-
-    s = raw.upper().strip()
-
-    # elimina suffissi tipo _TR01
-    s = s.split("_")[0]
-
-    # pattern: 2 lettere + 3 cifre + "-" + cifre
-    m = re.match(r"^([A-Z]{2})(\d{3})-(\d+)$", s)
-    if not m:
-        return None
-
-    prefix = m.group(1)   # DU
-    num3 = m.group(2)     # 102
-    tail = m.group(3)     # 262241
-
-    part1 = num3[:2]      # 10
-    part2 = num3[2]       # 2
-
-    return f"{prefix} {part1}-{part2}-{tail}"
-'''
-
-
-
-
-import re
 
 def normalize_single_cabin_id(s: str) -> str:
     """
@@ -254,37 +151,30 @@ def normalize_cabin_id(xlsx_cabin_list):
 
 
 
-def assign_competenze(associations, comp_e_set, comp_d_set):
-    """
-    Aggiunge:
-      - competenza_e
-      - competenza_d
+def assign_competenze(associations, set_comp_e, set_comp_d, debug=True):
 
-    Solo per cabine con in_xlsx == False
-    """
-    
-    for a in associations:
-        a["competenza_e"] = ""
-        a["competenza_d"] = ""
+    for i, a in enumerate(associations):
 
-        if a.get("in_xlsx") is True:
-            continue
+        raw_id = a.get("parsed_id")
+        #norm_id = normalize_single_cabin_id(raw_id)
 
-        parsed_id = a.get("parsed_id") or a.get("cabina_id")
-        norm_id = normalize_single_cabin_id(parsed_id)
+        in_e = raw_id in set_comp_e
+        in_d = raw_id in set_comp_d
 
-        if not norm_id:
-            continue
+        a["competenza_e"] = in_e
+        a["competenza_d"] = in_d
 
-        if norm_id in comp_e_set:
-            a["competenza_e"] = True
-            a["competenza_d"] = False
+        # 🔍 DEBUG sulle prime N
+        if debug and i < 15:
+            print("———")
+            print(f"Cabina idx {a['cabina_index']}")
+            print(" raw_id :", repr(raw_id))
+            print(" in E   :", in_e)
+            print(" in D   :", in_d)
 
-        elif norm_id in comp_d_set:
-            a["competenza_e"] = False
-            a["competenza_d"] = True
 
     return associations
+
 
 
 
@@ -327,21 +217,16 @@ def write_csv(associations, xlsx_cabin_set, csv_out: str = "associations.csv"):
         ])
 
         for a in associations:
-            raw_text = a["info_text"].replace("\n", " ").replace("\r", "").strip().strip('"')
-
-            parsed_id, info_text, trasf, ut, gr = parse_info_text(raw_text)
-
-            in_xlsx = parsed_id in new_cabin_set
 
             writer.writerow([
                 a["cabina_index"],
                 a["cabina_id"],   # ← la sigla (es. MB)
-                parsed_id,        # ← DU 10-2-xxxxxx
-                info_text,
-                trasf,
-                ut,
-                gr,
-                in_xlsx,  
+                a["parsed_id"],        # ← DU 10-2-xxxxxx
+                a["info_text_clean"],
+                a["trasformatore"],
+                a["utenza"],
+                a["gruppo"],
+                a["parsed_id"] in new_cabin_set,  
                 a.get("competenza_e", ""),
                 a.get("competenza_d", ""),
             ])

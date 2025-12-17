@@ -52,15 +52,15 @@ def main():
 
     edges_list = detect_edges_on_grid(input, grid_points, debug_img=True)
 
-    cabins, associations = detect_text("input_data/enhanced_img.png", triangles, "outputs/annotated.png", "outputs/associations.csv")
+    associations = detect_text("input_data/enhanced_img.png", triangles, "outputs/annotated.png", "outputs/associations.csv")
 
-    print(cabins[0].keys())
-    print(cabins[0])
+    print(associations[0].keys())
+    print(associations[0])
 
     build_graph_from_nodes_edges(
         input,
         #squares,
-        cabins,
+        associations,
         triangles,
         black_cirles_points,
         hollow_cirles_points,
@@ -80,7 +80,7 @@ def main():
     #new_cabin_set = normalize_cabin_id(cabin_set)
     #print(new_cabin_set)
 
-    associations = assign_competenze(associations, set_comp_e, set_comp_d)
+    associations = assign_competenze(associations, set_comp_e, set_comp_d, debug = True)
     write_csv(associations, cabin_set, "outputs/associations.csv")
 
 
