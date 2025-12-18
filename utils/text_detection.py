@@ -1063,7 +1063,7 @@ def detect_text(
         a["utenza"] = ut
         a["gruppo"] = gr
 
-        _, bbox = squares[i]
+        _, bbox = squares[a["cabina_index"]]
         a["bbox"] = bbox
 
         

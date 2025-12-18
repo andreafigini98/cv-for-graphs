@@ -4,7 +4,7 @@ from utils.constants import NODE_SIZE, CIRCLE_RADIUS
 from tqdm import tqdm
 from skimage.draw import line
 
-
+'''
 def detect_edges_on_grid(
     image_path,
     node_centers,
@@ -160,3 +160,178 @@ def detect_edges_on_grid(
         cv2.imwrite(output_path, img)
 
     return edges_list
+'''
+
+
+import cv2
+import numpy as np
+from skimage.draw import line
+from tqdm import tqdm
+
+
+def cluster_coords(coords, tol=15):
+    """
+    Raggruppa coordinate simili (es. allineamenti X/Y)
+    """
+    if not coords:
+        return []
+
+    coords = sorted(coords)
+    clusters = [coords[0]]
+
+    for c in coords[1:]:
+        if abs(c - clusters[-1]) > tol:
+            clusters.append(c)
+
+    return clusters
+
+
+import cv2
+import numpy as np
+from tqdm import tqdm
+
+
+def detect_edges_on_grid(
+    image_path,
+    associations,
+    black_threshold=80,
+    black_ratio_thr=0.15,
+    tolerance=3,
+    debug_img=True,
+    output_path="outputs/05_edges.png",
+):
+    """
+    Rileva collegamenti tra cabine usando SOLO:
+    - right -> left (orizzontali)
+    - bottom -> top (verticali)
+
+    associations: lista di dict con:
+        - bbox = (x, y, w, h)
+    """
+
+    img = cv2.imread(image_path)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+
+    # =========================
+    # 1️⃣ Costruzione nodi
+    # =========================
+    nodes = []
+    for a in associations:
+        x, y, w, h = a["bbox"]
+        cx = x + w // 2
+        cy = y + h // 2
+
+        nodes.append({
+            "center": (cx, cy),
+            "top": (cx, y),
+            "bottom": (cx, y + h),
+            "left": (x, cy),
+            "right": (x + w, cy),
+        })
+
+    # =========================
+    # 2️⃣ Cluster coordinate
+    # =========================
+    xs = cluster_coords([n["center"][0] for n in nodes], tol=20)
+    ys = cluster_coords([n["center"][1] for n in nodes], tol=20)
+
+    edges_list = []
+    edges_set = set()  # 🔒 evita duplicati
+
+    # =========================
+    # 3️⃣ EDGE VERTICALI (bottom -> top)
+    # =========================
+    for x in xs:
+        col_nodes = sorted(
+            [n for n in nodes if abs(n["center"][0] - x) < 20],
+            key=lambda n: n["center"][1]
+        )
+
+        for i in range(len(col_nodes) - 1):
+            n1, n2 = col_nodes[i], col_nodes[i + 1]
+
+            x_line = int(x)
+            y1 = n1["bottom"][1]
+            y2 = n2["top"][1]
+
+            if y2 <= y1:
+                continue
+
+            found = False
+            for dx in range(-tolerance, tolerance + 1):
+                lx = int(np.clip(x_line + dx, 0, gray.shape[1] - 1))
+                pixels = gray[y1:y2, lx]
+
+                if len(pixels) > 0 and np.mean(pixels < black_threshold) >= black_ratio_thr:
+                    found = True
+                    break
+
+            if found:
+                key = tuple(sorted([n1["center"], n2["center"]]))
+                if key not in edges_set:
+                    edges_set.add(key)
+                    edges_list.append((n1["center"], n2["center"]))
+
+                    if debug_img:
+                        cv2.line(
+                            img,
+                            (x_line, y1),
+                            (x_line, y2),
+                            (0, 200, 0),
+                            3,
+                        )
+
+    # =========================
+    # 4️⃣ EDGE ORIZZONTALI (right -> left)
+    # =========================
+    for y in ys:
+        row_nodes = sorted(
+            [n for n in nodes if abs(n["center"][1] - y) < 20],
+            key=lambda n: n["center"][0]
+        )
+
+        for i in range(len(row_nodes) - 1):
+            n1, n2 = row_nodes[i], row_nodes[i + 1]
+
+            y_line = int(y)
+            x1 = n1["right"][0]
+            x2 = n2["left"][0]
+
+            if x2 <= x1:
+                continue
+
+            found = False
+            for dy in range(-tolerance, tolerance + 1):
+                ly = int(np.clip(y_line + dy, 0, gray.shape[0] - 1))
+                pixels = gray[ly, x1:x2]
+
+                if len(pixels) > 0 and np.mean(pixels < black_threshold) >= black_ratio_thr:
+                    found = True
+                    break
+
+            if found:
+                key = tuple(sorted([n1["center"], n2["center"]]))
+                if key not in edges_set:
+                    edges_set.add(key)
+                    edges_list.append((n1["center"], n2["center"]))
+
+                    if debug_img:
+                        cv2.line(
+                            img,
+                            (x1, y_line),
+                            (x2, y_line),
+                            (0, 200, 0),
+                            3,
+                        )
+
+    # =========================
+    # 5️⃣ Output debug
+    # =========================
+    if debug_img:
+        cv2.imwrite(output_path, img)
+
+    print(f"DEBUG: edge totali = {len(edges_list)}")
+
+    return edges_list
+
+

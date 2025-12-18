@@ -165,27 +165,31 @@ def normalize_cabin_id(xlsx_cabin_list):
 
 
 
-def assign_competenze(associations, set_comp_e, set_comp_d, debug=True):
+def assign_competenze(associations, xlsx_cabin_set, set_comp_e, set_comp_d, debug=True):
 
-    
+    new_cabin_set = normalize_cabin_id(xlsx_cabin_set)
+
     for i, a in enumerate(associations):
 
-        raw_id = a.get("parsed_id")
-        #norm_id = normalize_single_cabin_id(raw_id)
+        a["in_xlsx"] = a["parsed_id"] in new_cabin_set
 
-        in_e = raw_id in set_comp_e
-        in_d = raw_id in set_comp_d
+        if(a["in_xlsx"] == False):
+            raw_id = a.get("parsed_id")
+            #norm_id = normalize_single_cabin_id(raw_id)
 
-        a["competenza_e"] = in_e
-        a["competenza_d"] = in_d
+            in_e = raw_id in set_comp_e
+            in_d = raw_id in set_comp_d
 
-        # 🔍 DEBUG sulle prime N
-        if debug and i < 15:
-            print("———")
-            print(f"Cabina idx {a['cabina_index']}")
-            print(" raw_id :", repr(raw_id))
-            print(" in E   :", in_e)
-            print(" in D   :", in_d)
+            a["competenza_e"] = in_e
+            a["competenza_d"] = in_d
+
+            # 🔍 DEBUG sulle prime N
+            if debug and i < 15:
+                print("———")
+                print(f"Cabina idx {a['cabina_index']}")
+                print(" raw_id :", repr(raw_id))
+                print(" in E   :", in_e)
+                print(" in D   :", in_d)
 
 
     return associations
@@ -194,7 +198,7 @@ def assign_competenze(associations, set_comp_e, set_comp_d, debug=True):
 
 
 
-def write_csv(associations, xlsx_cabin_set, csv_out: str = "associations.csv"):
+def write_csv(associations, csv_out: str = "associations.csv"):
     ##### OLD #####
     with open("outputs/associations_old.csv", "w", newline="", encoding="utf-8") as f:
         #writer = csv.writer(f, quoting=csv.QUOTE_NONE, escapechar='\\')
@@ -208,7 +212,6 @@ def write_csv(associations, xlsx_cabin_set, csv_out: str = "associations.csv"):
 
 
     ##### NEW #####
-    new_cabin_set = normalize_cabin_id(xlsx_cabin_set)
 
     with open(csv_out, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(
@@ -241,7 +244,8 @@ def write_csv(associations, xlsx_cabin_set, csv_out: str = "associations.csv"):
                 a["trasformatore"],
                 a["utenza"],
                 a["gruppo"],
-                a["parsed_id"] in new_cabin_set,  
+                #a["parsed_id"] in new_cabin_set,  
+                a["in_xlsx"],
                 a.get("competenza_e", ""),
                 a.get("competenza_d", ""),
             ])

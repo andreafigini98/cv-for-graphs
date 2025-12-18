@@ -36,11 +36,18 @@ def main():
         img_original, processed_img, debug_img=True
     )
 
+    associations = detect_text("input_data/enhanced_img.png", triangles, "outputs/annotated.png", "outputs/associations.csv")
+
+    print(associations[0].keys())
+    print(associations[0])
+
+    '''
     squares = detect_squares_with_letters(
         nodes_centers=grid_points, img=img_original, debug_img=True
     )
 
     squares = clean_squares(triangles, squares)
+    '''
 
     black_cirles_points = detect_black_circles(
         grid_points, img_original, debug_img=True
@@ -50,12 +57,8 @@ def main():
         grid_points, img, debug_img=True
     )
 
-    edges_list = detect_edges_on_grid(input, grid_points, debug_img=True)
-
-    associations = detect_text("input_data/enhanced_img.png", triangles, "outputs/annotated.png", "outputs/associations.csv")
-
-    print(associations[0].keys())
-    print(associations[0])
+    #edges_list = detect_edges_on_grid(input, grid_points, debug_img=True)
+    edges_list = detect_edges_on_grid(input, associations, debug_img=True)
 
     build_graph_from_nodes_edges(
         input,
@@ -69,7 +72,7 @@ def main():
     )
     
 
-    cabin_set = load_xlsx_cabins("input_data/DU10-25-100834_26092025-113430.xlsx")
+    cabin_set = load_xlsx_cabins("input_data/DU10-25-100713_26092025-112711.xlsx")
     print(type(cabin_set), cabin_set[:5])
 
     set_comp_e, set_comp_d = load_competenze_xlsx("input_data/PUNTI DI CONFINE.xlsx", debug=False)
@@ -80,8 +83,8 @@ def main():
     #new_cabin_set = normalize_cabin_id(cabin_set)
     #print(new_cabin_set)
 
-    associations = assign_competenze(associations, set_comp_e, set_comp_d, debug = True)
-    write_csv(associations, cabin_set, "outputs/associations.csv")
+    associations = assign_competenze(associations, cabin_set, set_comp_e, set_comp_d, debug = False)
+    write_csv(associations, "outputs/associations.csv")
     write_xlsx_colored(associations, "outputs/associations_colored.xlsx")
 
 
