@@ -222,6 +222,7 @@ __marimo__/
 
 # ignore files
 *.csv
+*.xlsx
 
 # ignore venv
 .unareti_graph

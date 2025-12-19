@@ -1,8 +1,6 @@
 import cv2
 import numpy as np
-from utils.constants import NODE_SIZE, CIRCLE_RADIUS
-from tqdm import tqdm
-from skimage.draw import line
+
 
 '''
 def detect_edges_on_grid(
@@ -186,9 +184,32 @@ def cluster_coords(coords, tol=15):
     return clusters
 
 
-import cv2
-import numpy as np
-from tqdm import tqdm
+
+def has_continuous_black_run(pixels, black_threshold, min_run_ratio=0.4):
+    """
+    pixels: array 1D di valori grayscale
+    Ritorna True se esiste una sequenza CONTINUA di pixel neri
+    sufficientemente lunga
+    """
+    if len(pixels) == 0:
+        return False
+
+    is_black = pixels < black_threshold
+    min_run = int(len(pixels) * min_run_ratio)
+
+    run = 0
+    for v in is_black:
+        if v:
+            run += 1
+            if run >= min_run:
+                return True
+        else:
+            run = 0
+
+    return False
+
+
+
 
 
 def detect_edges_on_grid(
@@ -262,8 +283,15 @@ def detect_edges_on_grid(
                 lx = int(np.clip(x_line + dx, 0, gray.shape[1] - 1))
                 pixels = gray[y1:y2, lx]
 
-                if len(pixels) > 0 and np.mean(pixels < black_threshold) >= black_ratio_thr:
+                if has_continuous_black_run(
+                    pixels,
+                    black_threshold,
+                    min_run_ratio=0.5
+                ):
                     found = True
+
+                #if len(pixels) > 0 and np.mean(pixels < black_threshold) >= black_ratio_thr:
+                #    found = True
                     break
 
             if found:
@@ -305,8 +333,14 @@ def detect_edges_on_grid(
                 ly = int(np.clip(y_line + dy, 0, gray.shape[0] - 1))
                 pixels = gray[ly, x1:x2]
 
-                if len(pixels) > 0 and np.mean(pixels < black_threshold) >= black_ratio_thr:
+                if has_continuous_black_run(
+                    pixels,
+                    black_threshold,
+                    min_run_ratio=0.5
+                ):
                     found = True
+                #if len(pixels) > 0 and np.mean(pixels < black_threshold) >= black_ratio_thr:
+                #    found = True
                     break
 
             if found:

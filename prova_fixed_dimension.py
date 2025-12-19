@@ -72,7 +72,7 @@ def main():
     )
     
 
-    cabin_set = load_xlsx_cabins("input_data/DU10-25-100713_26092025-112711.xlsx")
+    cabin_set = load_xlsx_cabins("input_data/DU10-25-100714_26092025-112716.xlsx")
     print(type(cabin_set), cabin_set[:5])
 
     set_comp_e, set_comp_d = load_competenze_xlsx("input_data/PUNTI DI CONFINE.xlsx", debug=False)
