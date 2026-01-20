@@ -6,20 +6,21 @@ from pdf2image import convert_from_path
 import numpy as np
 
 
+
 def preprocess(image_path):
     """
-    Keep only black pixels in an image, remove everything else.
+    Mantiene solo i pixel neri in un'immagine, rimuovendo tutto il resto.
 
     Args:
-        image_path (str): Path to the image.
-        output_path (str): Path to save the result.
-        threshold (int): Pixel intensity threshold to consider "black". 0-255.
+        image_path (str): Percorso dell'immagine.
+        output_path (str): Percorso in cui salvare il risultato.
+        threshold (int): Soglia di intensità del pixel per considerarlo "nero". 0-255.
 
     Returns:
         None
     """
 
-    # Load and preprocess
+    # Carica l'immagine e applica il preprocessing
     img = cv2.imread(image_path)
     if img is None:
         raise FileNotFoundError(f"Image not found: {image_path}")
@@ -31,26 +32,26 @@ def preprocess(image_path):
 
 def remove_blue(image, output_path="outputs/preprocessing/no_blue.png"):
     """
-    Remove blue parts of an image and keep everything else.
+    Rimuove le parti blu di un'immagine e mantiene tutto il resto.
 
     Args:
-        image_path (str): Path to the image.
-        output_path (str): Path to save the result.
+        image_path (str): Percorso dell'immagine.
+        output_path (str): Percorso in cui salvare il risultato.
 
     Returns:
         None
     """
-    # Convert to HSV
+    # Conversione in spazio colore HSV
     hsv = cv2.cvtColor(image, cv2.COLOR_BGR2HSV)
 
-    # Define blue range in HSV
+    # Definizione dell'intervallo del colore blu in HSV
     lower_blue = np.array([100, 60, 50])  # H, S, V
     upper_blue = np.array([140, 255, 255])
 
-    # Create mask for blue pixels
+    # Creazione della maschera per i pixel blu
     blue_mask = cv2.inRange(hsv, lower_blue, upper_blue)
 
-    # replace blue pixel with white
+    # Sostituisce i pixel blu con bianco
     image[blue_mask > 0] = [255, 255, 255]
 
     cv2.imwrite(output_path, image)
@@ -64,28 +65,34 @@ def remove_blue(image, output_path="outputs/preprocessing/no_blue.png"):
 
 
 
+
 def handle_input_file(input_path, output_dir="input_data"):
-    
+    # Converte il percorso del file in path assoluto
+    # per evitare problemi legati alla working directory
     input_path = os.path.abspath(input_path)
 
+    # Crea la directory di output se non esiste
     os.makedirs(output_dir, exist_ok=True)
 
+    # Estrae nome del file ed estensione
     name, ext = os.path.splitext(os.path.basename(input_path))
     ext = ext.lower()
 
-    # ---------------- PDF ----------------
+    # ---------------- Gestione file PDF ----------------
     if ext == ".pdf":
+        # Converte il PDF in immagini (una per pagina)
         pages = convert_from_path(input_path, dpi=300)
 
-        # per semplicità usiamo solo la prima pagina
-        png_path = os.path.join(output_dir, f"enhanced_img.png")
-        jpg_path = os.path.join(output_dir, f"hard.jpg")
+        # Definisce i percorsi dei file convertiti
+        png_path = os.path.join(output_dir, "enhanced_img.png")
+        jpg_path = os.path.join(output_dir, "hard.jpg")
 
+        # Salva la prima pagina del PDF in formato PNG e JPEG
         pages[0].save(png_path, "PNG")
         pages[0].save(jpg_path, "JPEG")
 
-        # enhance_text lavora sul PNG
-        enhanced_path = os.path.join(output_dir, f"enhanced_img.png")
+        # Applica il miglioramento del testo sull'immagine PNG
+        enhanced_path = os.path.join(output_dir, "enhanced_img.png")
         enhance_text(png_path, enhanced_path)
 
 
@@ -149,6 +156,3 @@ def enhance_text(path_in, path_out, debug=False):
 
     print(f"✅ Immagine migliorata salvata in {path_out}")
     return enhanced
-
-
-handle_input_file("image.pdf")

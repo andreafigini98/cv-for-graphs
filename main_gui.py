@@ -13,14 +13,14 @@ def select_files():
     if not file_path2:
         return
 
-    # Run main() in a thread to avoid freezing GUI
+    # Esegui main() in un thread per evitare il blocco della GUI
     threading.Thread(
         target=lambda: run_main(file_path1, file_path2), daemon=True
     ).start()
 
 
 def run_main(file_image, file_excel):
-    # Clear previous messages
+    # Pulisci i messaggi precedenti 
     messages_text.config(state="normal")
     messages_text.delete("1.0", tk.END)
     messages_text.config(state="disabled")
@@ -31,7 +31,7 @@ def run_main(file_image, file_excel):
         messages_text.see(tk.END)  # auto scroll
         messages_text.config(state="disabled")
 
-    # Call main and pass gui_print as debug callback
+    # Chiama main e passa gui_print come callback di debug
     main(file_image, file_excel, debug_callback=gui_print)
     gui_print("Processing finished!")
 
@@ -41,7 +41,7 @@ root.title("File Input App")
 
 tk.Button(root, text="Select files", command=select_files).pack(padx=20, pady=10)
 
-# Text widget for debug messages
+# Widget di testo per messaggi di debug
 messages_text = tk.Text(root, height=20, width=80, state="disabled")
 messages_text.pack(padx=10, pady=5)
 

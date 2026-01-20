@@ -819,22 +819,21 @@ def detect_text(
         roi_w = x2 - x1
         roi_h = y2 - y1
 
-        # extract text blocks that intersect the ROI, in ROI-local coords
+        # estrae i blocchi testuali che intersecano il ROI
         local_text_blocks = extract_text_blocks_in_roi(text_blocks, roi)
         if not local_text_blocks:
             continue
 
-        # merge lines inside the ROI (note: merge_lines_morph expects (H,W) for the image it receives)
+        # unisci le linee dentro il ROI
         try:
             local_line_boxes = merge_lines_morph(local_text_blocks, (roi_h, roi_w), hor_kernel_w_frac=0.009, min_area=60)
         except Exception:
-            # fallback: if merge_lines_morph assumes global coords, try converting bboxes to tuples
             local_line_boxes = merge_lines_morph(local_text_blocks, (roi_h, roi_w), hor_kernel_w_frac=0.008, min_area=60)
 
         if not local_line_boxes:
             continue
 
-        # group into blocks locally (use tighter params if desired)
+        # raggruppamento in blocchi locali
         local_blocks = group_line_boxes_into_blocks(
             local_line_boxes,
             max_v_gap_frac=0.10,
@@ -843,19 +842,16 @@ def detect_text(
             max_lines_per_block=6,
         )
 
-        # convert local blocks back to global coords and collect
+        # conversione dei blocchi locali in globali
         global_blocks = shift_boxes_to_global(local_blocks, roi)
         all_local_blocks_global_coords.extend(global_blocks)
 
-    # deduplicate overlapping blocks that might come from neighboring ROIs
+    # divisione dei blocchi sovrapposti che derivano da ROI vicine
     if all_local_blocks_global_coords:
         all_local_blocks_global_coords = dedup_blocks_by_iou(all_local_blocks_global_coords, iou_thresh=0.5)
 
     blocks_global = all_local_blocks_global_coords
     print(f"[DBG] Blocchi locali consolidati (tot): {len(blocks_global)}")
-
-    # 6) Optional: if you still want some global grouping for orphan text, you can run a light global pass
-    # but by default we rely on local blocks only.
 
     # 7) OCR individuale su ciascun blocco consolidato (già in global coords)
     for idx, blk in tqdm(enumerate(blocks_global), desc="Single block OCR"):
@@ -865,7 +861,7 @@ def detect_text(
             blk["ocr_text"] = ""
             continue
 
-        # add small padding and avoid cabina borders
+        # aggiunta di un piccolo padding per evitare i bordi della cabina
         pad_top, pad_bottom, pad_right, pad_left = 1, 1, 1, 1
         x0 = max(0, x + pad_left)
         y0 = max(0, y - pad_top)
@@ -956,11 +952,11 @@ def detect_text(
         text = re.sub(r"\s+", " ", text).strip()
         blk["ocr_text"] = text
 
-    # assign text to blocks
+    # assegna il testo ai blocchi
     for block in blocks_global:
         block["text"] = block.get("ocr_text", "").strip()
 
-    # draw annotated image
+    # disegna l'immagine annotata
     annotated = img.copy()
     for b in blocks_global:
         bx, by, bw, bh = b["bbox"]
@@ -995,7 +991,7 @@ def detect_text(
 
 
 
-    # extract ids
+    # estrae gli id
     ids_per_square = []
     for _, bbox in squares:
         sid, conf = extract_inner_id(img, bbox)
@@ -1003,7 +999,7 @@ def detect_text(
 
 
 
-    # associate cabina -> nearest block to its right
+    # associa cabina con il testo più vicino alla sua destra
     associations = []
     for i, ((_, bbox), (cabina_id, conf)) in enumerate(zip(squares, ids_per_square)):
         x, y, w, h = bbox

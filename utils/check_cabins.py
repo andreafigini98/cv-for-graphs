@@ -2,33 +2,37 @@ import re
 import csv
 from openpyxl import load_workbook
 import math
+from openpyxl import Workbook
+from openpyxl.styles import PatternFill
 
-
-
-from openpyxl import load_workbook
 
 def load_competenze_xlsx(path_xlsx, debug=True):
+    # Carica il file Excel delle competenze (E / D)
     wb = load_workbook(path_xlsx, data_only=True)
 
     if debug:
         print("📘 Fogli disponibili:", wb.sheetnames)
 
+    # Usa il foglio attivo (assunto come quello corretto)
     ws = wb.active
 
     if debug:
         print("📄 Foglio attivo:", ws.title)
         print("📐 Max row:", ws.max_row)
 
+    # Liste grezze (raw) dei codici competenza
     comp_e_raw = []
     comp_d_raw = []
 
+    # Lettura righe: si parte dalla riga 4 (struttura nota del file)
     for row in range(4, ws.max_row + 1):
-        val_g = ws[f"G{row}"].value
-        val_s = ws[f"S{row}"].value
+        val_g = ws[f"G{row}"].value  # colonna G → competenza E
+        val_s = ws[f"S{row}"].value  # colonna S → competenza D
 
-        if debug and row < 15:  # stampiamo solo le prime righe
+        if debug and row < 15:  # stampa solo le prime righe per debug
             print(f"Riga {row} | G: {val_g!r} | S: {val_s!r}")
 
+        # Aggiunge solo stringhe non vuote
         if isinstance(val_g, str) and val_g.strip():
             comp_e_raw.append(val_g.strip())
 
@@ -41,7 +45,7 @@ def load_competenze_xlsx(path_xlsx, debug=True):
         print("📊 Totale raw E:", len(comp_e_raw))
         print("📊 Totale raw D:", len(comp_d_raw))
 
-    # Normalizzazione
+    # --- Normalizzazione dei codici cabina ---
     comp_e_norm = set()
     comp_d_norm = set()
 
@@ -66,23 +70,21 @@ def load_competenze_xlsx(path_xlsx, debug=True):
     return comp_e_norm, comp_d_norm
 
 
-
-
 def load_xlsx_cabins(path_xlsx):
+    # Carica file Excel con elenco cabine
     wb = load_workbook(path_xlsx, data_only=True)
     ws = wb.active
 
     cabins = []
 
-    # seconda colonna = B
-    # righe pari a partire dalla 10
+    # Seconda colonna (B), righe pari a partire dalla 10
     for row in range(10, ws.max_row + 1, 2):
         val = ws.cell(row=row, column=2).value
 
         if val is None:
             continue
 
-        # scarta NaN
+        # Scarta NaN
         if isinstance(val, float) and math.isnan(val):
             continue
 
@@ -91,20 +93,12 @@ def load_xlsx_cabins(path_xlsx):
     return cabins
 
 
-
-
-
-
-
-
-
-
 def normalize_single_cabin_id(s: str) -> str:
     """
     Normalizza un codice cabina in formato canonico:
     AA 10-2-262241
 
-    Gestisce:
+    Gestisce varianti come:
     - DU40-2-453048
     - DU102-134210_TR01
     - DU102-134210
@@ -115,9 +109,9 @@ def normalize_single_cabin_id(s: str) -> str:
 
     s = s.upper().strip()
 
-    # 1️⃣ pulizia base
+    # 1️⃣ Pulizia base del formato
     s = s.replace(".", "-")
-    s = re.sub(r"_?TR\d+", "", s)      # rimuove _TR01, TR02, ecc
+    s = re.sub(r"_?TR\d+", "", s)      # rimuove suffissi tipo _TR01
     s = re.sub(r"\s+", " ", s)
 
     # 2️⃣ FORMATO A: DU40-2-453048
@@ -125,23 +119,17 @@ def normalize_single_cabin_id(s: str) -> str:
     if m:
         return f"{m.group(1)} {m.group(2)}-{m.group(3)}-{m.group(4)}"
 
-    # 3️⃣ FORMATO B: DU102-134210  → 10-2
+    # 3️⃣ FORMATO B: DU102-134210 → 10-2
     m = re.search(r"([A-Z]{2})\s*(\d{3})-(\d{6})", s)
     if m:
         aa = m.group(1)
-        zone = m.group(2)[:2]   # prime 2 cifre
-        sub = m.group(2)[2]     # terza cifra
+        zone = m.group(2)[:2]
+        sub = m.group(2)[2]
         code = m.group(3)
         return f"{aa} {zone}-{sub}-{code}"
 
-    # 4️⃣ non riconosciuto
+    # 4️⃣ Codice non riconosciuto
     return ""
-
-
-
-
-
-
 
 
 def normalize_cabin_id(xlsx_cabin_list):
@@ -162,20 +150,18 @@ def normalize_cabin_id(xlsx_cabin_list):
     return normalized
 
 
-
-
-
 def assign_competenze(associations, xlsx_cabin_set, set_comp_e, set_comp_d, debug=True):
-
+    # Normalizza l’elenco cabine proveniente da XLSX
     new_cabin_set = normalize_cabin_id(xlsx_cabin_set)
 
     for i, a in enumerate(associations):
 
+        # Verifica se la cabina è presente nel file XLSX
         a["in_xlsx"] = a["parsed_id"] in new_cabin_set
 
-        if(a["in_xlsx"] == False):
+        # Se non presente in XLSX, controlla competenze E / D
+        if a["in_xlsx"] == False:
             raw_id = a.get("parsed_id")
-            #norm_id = normalize_single_cabin_id(raw_id)
 
             in_e = raw_id in set_comp_e
             in_d = raw_id in set_comp_d
@@ -183,7 +169,7 @@ def assign_competenze(associations, xlsx_cabin_set, set_comp_e, set_comp_d, debu
             a["competenza_e"] = in_e
             a["competenza_d"] = in_d
 
-            # 🔍 DEBUG sulle prime N
+            # Debug sulle prime N associazioni
             if debug and i < 15:
                 print("———")
                 print(f"Cabina idx {a['cabina_index']}")
@@ -191,17 +177,12 @@ def assign_competenze(associations, xlsx_cabin_set, set_comp_e, set_comp_d, debu
                 print(" in E   :", in_e)
                 print(" in D   :", in_d)
 
-
     return associations
 
 
-
-
-
 def write_csv(associations, csv_out: str = "associations.csv"):
-    ##### OLD #####
+    ##### VERSIONE PRECEDENTE (legacy) #####
     with open("outputs/associations_old.csv", "w", newline="", encoding="utf-8") as f:
-        #writer = csv.writer(f, quoting=csv.QUOTE_NONE, escapechar='\\')
         writer = csv.writer(f, delimiter=";", quoting=csv.QUOTE_NONE, escapechar='\\')
 
         writer.writerow(["cabina_index", "cabina_id", "cabina_conf", "info_text"])
@@ -209,10 +190,7 @@ def write_csv(associations, csv_out: str = "associations.csv"):
             info_text = a["info_text"].replace("\n", " ").replace("\r", "").strip().strip('"')
             writer.writerow([a["cabina_index"], a["cabina_id"], f"{a['cabina_conf']:.1f}", info_text])
 
-
-
-    ##### NEW #####
-
+    ##### VERSIONE NUOVA (completa) #####
     with open(csv_out, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(
             f,
@@ -221,6 +199,7 @@ def write_csv(associations, csv_out: str = "associations.csv"):
             escapechar="\\"
         )
 
+        # Intestazioni CSV
         writer.writerow([
             "cabina_index",
             "sigla_cabina",
@@ -235,35 +214,27 @@ def write_csv(associations, csv_out: str = "associations.csv"):
         ])
 
         for a in associations:
-
             writer.writerow([
                 a["cabina_index"],
-                a["cabina_id"],   # ← la sigla (es. MB)
-                a["parsed_id"],        # ← DU 10-2-xxxxxx
+                a["cabina_id"],        # sigla (es. MB)
+                a["parsed_id"],        # formato normalizzato
                 a["info_text_clean"],
                 a["trasformatore"],
                 a["utenza"],
                 a["gruppo"],
-                #a["parsed_id"] in new_cabin_set,  
                 a["in_xlsx"],
                 a.get("competenza_e", ""),
                 a.get("competenza_d", ""),
             ])
 
 
-
-
-
-
-from openpyxl import Workbook
-from openpyxl.styles import PatternFill
-
 def write_xlsx_colored(associations, out_xlsx):
+    # Crea un file Excel con evidenziazione cromatica delle competenze
     wb = Workbook()
     ws = wb.active
     ws.title = "associations"
 
-    # colori tenui
+    # Colori di sfondo
     FILL_TRUE  = PatternFill(start_color="C6EFCE", end_color="C6EFCE", fill_type="solid")
     FILL_FALSE = PatternFill(start_color="F4CCCC", end_color="F4CCCC", fill_type="solid")
 
@@ -299,7 +270,7 @@ def write_xlsx_colored(associations, out_xlsx):
         ws.append(row)
         r = ws.max_row
 
-        # colonne booleane (1-based)
+        # Colonne booleane (1-based)
         bool_cols = {
             8: a.get("in_xlsx"),
             9: a.get("competenza_e"),
@@ -312,7 +283,8 @@ def write_xlsx_colored(associations, out_xlsx):
                 cell.fill = FILL_TRUE
             elif val is False:
                 cell.fill = FILL_FALSE
-            # None → lasciamo bianco (come richiesto)
+            # None → lasciato bianco
 
     wb.save(out_xlsx)
     print(f"✅ XLSX colorato salvato in {out_xlsx}")
+

@@ -14,7 +14,6 @@ from utils.preprocessing import preprocess, remove_blue, handle_input_file
 from utils.draw_grid import draw_node_grid, fill_gaps_grid
 from utils.build_networkx_graph import build_graph_from_nodes_edges
 from utils.text_detection import detect_text
-from utils.image_to_black import enhance_text
 from utils.check_cabins import (
     load_xlsx_cabins,
     write_csv,
@@ -33,7 +32,9 @@ def main(file_image, file_excel, debug_callback=None):
         else:
             print(msg)
 
-    input = file_image
+    handle_input_file(file_image)
+
+    input = "input_data/hard.jpg"
 
     img = preprocess(input)
     img_original = copy.deepcopy(img)
