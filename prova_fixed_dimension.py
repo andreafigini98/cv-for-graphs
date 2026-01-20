@@ -16,53 +16,73 @@ from utils.build_networkx_graph import build_graph_from_nodes_edges
 from utils.utilis import clean_squares
 from utils.text_detection import detect_text
 from utils.image_to_black import enhance_text
-from utils.check_cabins import load_xlsx_cabins, write_csv, normalize_cabin_id, load_competenze_xlsx, assign_competenze, write_xlsx_colored
+from utils.check_cabins import (
+    load_xlsx_cabins,
+    write_csv,
+    normalize_cabin_id,
+    load_competenze_xlsx,
+    assign_competenze,
+    write_xlsx_colored,
+)
 
-def main():
-    
-    input = "input_data/hard.jpg"
+
+def main(file_image, file_excel, debug_callback=None):
+
+    def dbg(msg):
+        if debug_callback:
+            debug_callback(msg)
+        else:
+            print(msg)
+
+    input = file_image
 
     img = preprocess(input)
     img_original = copy.deepcopy(img)
     processed_img = remove_blue(img)
     processed_img_copy = processed_img.copy()
 
+    dbg(f"Detecting nodes")
     nodes_center = detect_node_grid(
         img, processed_img, node_size=NODE_SIZE, debug_img=True
     )
+    dbg(f"Detected {len(nodes_center)} nodes")
+
+    dbg(f"Filling gaps in grid")
     grid_points = fill_gaps_grid(nodes_center, debug_img=True, img=input)
+    dbg(f"Filled gaps in grid: {len(grid_points)} points")
 
-    triangles = detect_triangles_from_edges(
-        img_original, processed_img, debug_img=True
+    dbg(f"Detecting triangles")
+    triangles = detect_triangles_from_edges(img_original, processed_img, debug_img=True)
+    dbg(f"Detected {len(triangles)} triangles")
+
+    dbg(f"Detecting associations")
+    associations = detect_text(
+        "input_data/enhanced_img.png",
+        triangles,
+        "outputs/annotated.png",
+        "outputs/associations.csv",
     )
+    dbg(f"Detected associations: {len(associations)}")
 
-    associations = detect_text("input_data/enhanced_img.png", triangles, "outputs/annotated.png", "outputs/associations.csv")
-
-    print(associations[0].keys())
-    print(associations[0])
-
-    '''
-    squares = detect_squares_with_letters(
-        nodes_centers=grid_points, img=img_original, debug_img=True
-    )
-
-    squares = clean_squares(triangles, squares)
-    '''
-
+    dbg(f"Detecting black circles")
     black_cirles_points = detect_black_circles(
         grid_points, img_original, debug_img=True
     )
+    dbg(f"Black circles detected: {len(black_cirles_points)}")
 
+    dbg(f"Detecting hollow black circles")
     hollow_cirles_points = detect_hollow_circles_with_letters(
         grid_points, img, debug_img=True
     )
+    dbg(f"Hollow circles detected: {len(hollow_cirles_points)}")
 
-    #edges_list = detect_edges_on_grid(input, grid_points, debug_img=True)
+    dbg(f"Detecting edges")
     edges_list = detect_edges_on_grid(input, associations, debug_img=True)
+    dbg(f"Edges detected: {len(edges_list)}")
 
+    dbg("Building graph")
     build_graph_from_nodes_edges(
         input,
-        #squares,
         associations,
         triangles,
         black_cirles_points,
@@ -70,23 +90,20 @@ def main():
         edges_list,
         draw=True,
     )
-    
+    dbg("Graph built")
 
-    cabin_set = load_xlsx_cabins("input_data/DU10-25-100714_26092025-112716.xlsx")
-    print(type(cabin_set), cabin_set[:5])
+    dbg("Loading cabin set")
+    cabin_set = load_xlsx_cabins(file_excel)
+    dbg(f"Loaded cabin set ({len(cabin_set)} entries): {cabin_set[:5]}")
 
-    set_comp_e, set_comp_d = load_competenze_xlsx("input_data/PUNTI DI CONFINE.xlsx", debug=False)
-    print(type(set_comp_e), list(set_comp_e)[:5])
-    print(type(set_comp_d), list(set_comp_d)[:5])
+    set_comp_e, set_comp_d = load_competenze_xlsx(
+        "input_data/PUNTI DI CONFINE.xlsx", debug=False
+    )
+    dbg(f"Competence sets: E={len(set_comp_e)}, D={len(set_comp_d)}")
 
-
-    #new_cabin_set = normalize_cabin_id(cabin_set)
-    #print(new_cabin_set)
-
-    associations = assign_competenze(associations, cabin_set, set_comp_e, set_comp_d, debug = False)
+    associations = assign_competenze(
+        associations, cabin_set, set_comp_e, set_comp_d, debug=False
+    )
     write_csv(associations, "outputs/associations.csv")
     write_xlsx_colored(associations, "outputs/associations_colored.xlsx")
-
-
-if __name__ == "__main__":
-    main()
+    dbg("Excel/CSV outputs written")

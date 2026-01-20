@@ -163,7 +163,6 @@ def detect_edges_on_grid(
 
 import cv2
 import numpy as np
-from skimage.draw import line
 from tqdm import tqdm
 
 

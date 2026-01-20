@@ -1,0 +1,8 @@
+opencv-python
+tqdm
+numpy
+easyocr
+matplotlib
+openpyxl
+pytesseract
+networkx
