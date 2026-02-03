@@ -22,6 +22,7 @@ from utils.check_cabins import (
     assign_competenze,
     write_xlsx_colored,
 )
+from utils.utilis import resource_path
 
 
 def main(file_image, file_excel, debug_callback=None):
@@ -97,10 +98,8 @@ def main(file_image, file_excel, debug_callback=None):
     dbg("Loading cabin set")
     cabin_set = load_xlsx_cabins(file_excel)
     dbg(f"Loaded cabin set ({len(cabin_set)} entries): {cabin_set[:5]}")
-
-    set_comp_e, set_comp_d = load_competenze_xlsx(
-        "input_data/PUNTI DI CONFINE.xlsx", debug=False
-    )
+    excel_path = resource_path("input_data/PUNTI DI CONFINE.xlsx")
+    set_comp_e, set_comp_d = load_competenze_xlsx(excel_path, debug=False)
     dbg(f"Competence sets: E={len(set_comp_e)}, D={len(set_comp_d)}")
 
     associations = assign_competenze(

@@ -1,6 +1,8 @@
 from utils.constants import NODE_SIZE
 from detectors.triangles import _find_centroid_tringle
 import psutil
+from pathlib import Path
+import sys
 
 
 # se un quadrato viene identificato dove c'è un triangolo, elimina il quadrato
@@ -32,4 +34,13 @@ def clean_squares(triangle_list, square_list):
 
 def get_available_memory_gb():
     mem = psutil.virtual_memory()
-    return mem.available / (1024 ** 3)
+    return mem.available / (1024**3)
+
+
+def resource_path(relative_path: str) -> Path:
+    """Get absolute path to resource, works for dev and PyInstaller."""
+    if getattr(sys, "frozen", False):
+        base_path = Path(sys._MEIPASS)
+    else:
+        base_path = Path(__file__).parent
+    return base_path / relative_path
