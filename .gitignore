@@ -226,3 +226,7 @@ __marimo__/
 
 # ignore venv
 .unareti_graph
+
+
+.pyc
+*.pyc
