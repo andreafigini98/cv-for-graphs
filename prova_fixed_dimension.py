@@ -32,7 +32,9 @@ def main(file_image, file_excel, debug_callback=None):
         else:
             print(msg)
 
+    dbg(f"Converting input file")
     handle_input_file(file_image)
+    dbg(f"Done!")
 
     input = "input_data/hard.jpg"
 
@@ -55,7 +57,7 @@ def main(file_image, file_excel, debug_callback=None):
     triangles = detect_triangles_from_edges(img_original, processed_img, debug_img=True)
     dbg(f"Detected {len(triangles)} triangles")
 
-    dbg(f"Detecting associations")
+    dbg(f"Detecting associations - THIS MAY TAKE A LONG TIME")
     associations = detect_text(
         "input_data/enhanced_img.png",
         triangles,

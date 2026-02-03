@@ -5,11 +5,15 @@ from prova_fixed_dimension import main
 
 
 def select_files():
-    file_path1 = filedialog.askopenfilename(title="Select image")
+    file_path1 = filedialog.askopenfilename(
+        title="Select PDF", filetypes=[("PDF files", "*.pdf")]
+    )
     if not file_path1:
         return
 
-    file_path2 = filedialog.askopenfilename(title="Select excel")
+    file_path2 = filedialog.askopenfilename(
+        title="Select excel", filetypes=[("Excel files", "*.xlsx")]
+    )
     if not file_path2:
         return
 
@@ -20,7 +24,7 @@ def select_files():
 
 
 def run_main(file_image, file_excel):
-    # Pulisci i messaggi precedenti 
+    # Pulisci i messaggi precedenti
     messages_text.config(state="normal")
     messages_text.delete("1.0", tk.END)
     messages_text.config(state="disabled")

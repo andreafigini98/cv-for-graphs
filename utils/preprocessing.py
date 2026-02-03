@@ -4,7 +4,24 @@ import os
 import cv2
 from pdf2image import convert_from_path
 import numpy as np
+from pathlib import Path
+import sys
+import platform
+from pathlib import Path
 
+
+def poppler_path() -> str | None:
+    if platform.system() != "Windows":
+        return None  # let pdf2image use PATH
+
+    # Windows only
+    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
+    return str(base / "poppler" / "bin")
+
+
+#     ### WINDOWS DEBUG PATH ###
+### Use only for running unpackaged on winodows
+#     # return "C:\\Users\\an.figini\\Documents\\unareti_graph\\poppler\\Library\\bin"
 
 
 def preprocess(image_path):
@@ -64,45 +81,36 @@ def remove_blue(image, output_path="outputs/preprocessing/no_blue.png"):
     return finished_preprocessing
 
 
-
-
 def handle_input_file(input_path, output_dir="input_data"):
-    # Converte il percorso del file in path assoluto
-    # per evitare problemi legati alla working directory
     input_path = os.path.abspath(input_path)
-
-    # Crea la directory di output se non esiste
     os.makedirs(output_dir, exist_ok=True)
 
-    # Estrae nome del file ed estensione
     name, ext = os.path.splitext(os.path.basename(input_path))
     ext = ext.lower()
 
-    # ---------------- Gestione file PDF ----------------
     if ext == ".pdf":
-        # Converte il PDF in immagini (una per pagina)
-        pages = convert_from_path(input_path, dpi=300)
+        kwargs = {"dpi": 300}
 
-        # Definisce i percorsi dei file convertiti
+        pp = poppler_path()
+        if pp:
+            kwargs["poppler_path"] = pp
+
+        pages = convert_from_path(input_path, **kwargs)
+
         png_path = os.path.join(output_dir, "enhanced_img.png")
         jpg_path = os.path.join(output_dir, "hard.jpg")
 
-        # Salva la prima pagina del PDF in formato PNG e JPEG
         pages[0].save(png_path, "PNG")
         pages[0].save(jpg_path, "JPEG")
 
-        # Applica il miglioramento del testo sull'immagine PNG
-        enhanced_path = os.path.join(output_dir, "enhanced_img.png")
-        enhance_text(png_path, enhanced_path)
-
-
+        enhance_text(png_path, png_path)
 
 
 def enhance_text(path_in, path_out, debug=False):
     """
     Rafforza il testo colorato (blu, rosso, nero) rendendolo più scuro e pieno,
     mantenendo lo sfondo bianco e migliorando contrasto e leggibilità.
-    
+
     thickness: regola lo spessore del testo (0 = sottile, 1 = normale, 2 = più spesso)
     """
     thickness = 1
@@ -140,9 +148,7 @@ def enhance_text(path_in, path_out, debug=False):
     enhanced[mask_text > 0] = 0
 
     # 7️⃣ Sharpen leggero per contorni più nitidi
-    kernel_sharp = np.array([[0, -1, 0],
-                             [-1, 5, -1],
-                             [0, -1, 0]], dtype=np.float32)
+    kernel_sharp = np.array([[0, -1, 0], [-1, 5, -1], [0, -1, 0]], dtype=np.float32)
     enhanced = cv2.filter2D(enhanced, -1, kernel_sharp)
 
     cv2.imwrite(path_out, enhanced)

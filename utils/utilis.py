@@ -1,5 +1,6 @@
 from utils.constants import NODE_SIZE
 from detectors.triangles import _find_centroid_tringle
+import psutil
 
 
 # se un quadrato viene identificato dove c'è un triangolo, elimina il quadrato
@@ -30,9 +31,5 @@ def clean_squares(triangle_list, square_list):
 
 
 def get_available_memory_gb():
-    with open("/proc/meminfo") as f:
-        for line in f:
-            if line.startswith("MemAvailable:"):
-                parts = line.split()
-                kb = int(parts[1])
-                return kb / (1024**2)
+    mem = psutil.virtual_memory()
+    return mem.available / (1024 ** 3)
