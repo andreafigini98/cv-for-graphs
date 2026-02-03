@@ -2,7 +2,7 @@ import cv2
 import numpy as np
 from utils.constants import NODE_SIZE
 from tqdm import tqdm
-
+import sys
 
 def _points_close(p1, p2, tol=3):
     """Restituisce True se due punti sono entro tol pixel di distanza."""
@@ -110,7 +110,11 @@ def detect_triangles_from_edges(
 
     tol = 20
     # Raggruppa i bordi che condividono estremi comuni
-    for (x1a, y1a), (x2a, y2a) in tqdm(edges_list, desc="Detecting triangles"):
+    use_tqdm = True
+    if getattr(sys, "frozen", False):
+        use_tqdm = False  # no console in PyInstaller windowed mode
+    iterator = tqdm(edges_list, desc="Detecting triangles") if use_tqdm else edges_list
+    for (x1a, y1a), (x2a, y2a) in iterator:
         for (x1b, y1b), (x2b, y2b) in edges_list:
             if _points_close((x1a, y1a), (x1b, y1b), tol) and not _points_close(
                 (x2a, y2a), (x2b, y2b), tol

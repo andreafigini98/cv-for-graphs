@@ -163,7 +163,6 @@ def detect_edges_on_grid(
 
 import cv2
 import numpy as np
-from tqdm import tqdm
 
 
 def cluster_coords(coords, tol=15):

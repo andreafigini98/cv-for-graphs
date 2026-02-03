@@ -41,15 +41,17 @@ def detect_node_grid(
             node_min_area_ratio * img_area <= area <= node_max_area_ratio * img_area
         ):
             continue
-        x, y, w, h = cv2.boundingRect(c)
-        if (
-            abs(w - node_size) < 10 and abs(h - node_size) < 10
-        ):  # consente una piccola tolleranza
-            nodes.append((x, y, w, h))
-            nodes_centers.append((x + w // 2, y + h // 2))
-            if debug_img:
-                cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                # cv2.circle(img, (x + w // 2, y + h // 2), 50, (255, 0, 0), -1)
+
+        for c in contours:
+            x, y, w, h = cv2.boundingRect(c)
+            if (
+                abs(w - node_size) < 10 and abs(h - node_size) < 10
+            ):  # consente una piccola tolleranza
+                nodes.append((x, y, w, h))
+                nodes_centers.append((x + w // 2, y + h // 2))
+                if debug_img:
+                    cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                    # cv2.circle(img, (x + w // 2, y + h // 2), 50, (255, 0, 0), -1)
 
     # Salva il risultato
     if debug_img:

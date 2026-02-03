@@ -8,6 +8,7 @@ import csv
 from tqdm import tqdm
 import gc
 from utils.utilis import get_available_memory_gb
+import sys
 
 
 def easyocr_blocks(gray_img):
@@ -22,7 +23,11 @@ def easyocr_blocks(gray_img):
 
     text_blocks = []
     # for (bbox, text, conf) in results:
-    for bbox, text, conf in tqdm(results, desc="Detecting text blocks"):
+    use_tqdm = True
+    if getattr(sys, "frozen", False):
+        use_tqdm = False  # no console in PyInstaller windowed mode
+    iterator = tqdm(results, desc="Detecting text blocks") if use_tqdm else results
+    for bbox, text, conf in iterator:
         # bbox = [[x1,y1],[x2,y2],[x3,y3],[x4,y4]]
         x_coords = [p[0] for p in bbox]
         y_coords = [p[1] for p in bbox]
@@ -207,25 +212,32 @@ def group_line_boxes_into_blocks(
     blocks = []
     cur = [line_boxes[0]]
     # for lb in line_boxes[1:]:
-    for lb in tqdm(line_boxes[1:], desc="Grouping lines into blocks"):
+    use_tqdm = True
+    if getattr(sys, "frozen", False):
+        use_tqdm = False  # no console in PyInstaller windowed mode
+    iterator = (
+        tqdm(line_boxes[1:], desc="Grouping lines into blocks")
+        if use_tqdm
+        else line_boxes[1:]
+    )
+    for lb in iterator:
         x, y, w, h = lb["bbox"]
         px, py, pw, ph = cur[-1]["bbox"]
 
         v_gap = y - (py + ph)
-        #same_col = (
+        # same_col = (
         #    h_overlap_frac((x, y, w, h), (px, py, pw, ph)) >= min_h_overlap_frac
-        #) or (abs(x - px) <= int(round(max_x_shift_frac * max_w)))
+        # ) or (abs(x - px) <= int(round(max_x_shift_frac * max_w)))
 
         same_col = (
-        h_overlap_frac((x, y, w, h), (px, py, pw, ph)) >= min_h_overlap_frac
-        #) and (abs(x - px) <= int(round(max_x_shift_frac * max_w)))
+            h_overlap_frac((x, y, w, h), (px, py, pw, ph))
+            >= min_h_overlap_frac
+            # ) and (abs(x - px) <= int(round(max_x_shift_frac * max_w)))
         ) and (abs(x - px) <= max_x_shift_frac * min(w, pw))
 
-
         xcen_diff = abs(x_center((x, y, w, h)) - x_center((px, py, pw, ph)))
-        #xcen_ok = xcen_diff <= 0.35 * max_w
+        # xcen_ok = xcen_diff <= 0.35 * max_w
         xcen_ok = xcen_diff <= 0.35 * min(w, pw)
-
 
         if (
             0 <= v_gap <= max_v_gap
@@ -361,7 +373,7 @@ def find_squares_contours_strict(
     max_rel_area: float = 0.12,
     ar_min: float = 0.80,
     ar_max: float = 1.30,
-    rect_comp_min: float = 0.65, # prima 0.88
+    rect_comp_min: float = 0.65,  # prima 0.88
     right_angle_tol_deg: float = 12,
     debug_prefix: str = None,
 ) -> List[Tuple[np.ndarray, Tuple[int, int, int, int]]]:
@@ -408,7 +420,11 @@ def find_squares_contours_strict(
 
     candidates = []
     # for cnt in contours:
-    for cnt in tqdm(contours, desc="Detecting cabins"):
+    use_tqdm = True
+    if getattr(sys, "frozen", False):
+        use_tqdm = False  # no console in PyInstaller windowed mode
+    iterator = tqdm(contours, desc="Detecting cabins") if use_tqdm else contours
+    for cnt in iterator:
         area = cv2.contourArea(cnt)
         if area < min_area or area > max_area:
             continue
@@ -464,8 +480,15 @@ def easyocr_blocks_tiled(image, reader, tile_size=(1000, 1000), overlap=50):
     """
     H, W = image.shape[:2]
     all_text_blocks = []
-
-    for y0 in tqdm(range(0, H, tile_size[1] - overlap), desc="easyocr tiled"):
+    use_tqdm = True
+    if getattr(sys, "frozen", False):
+        use_tqdm = False  # no console in PyInstaller windowed mode
+    iterator = (
+        tqdm(range(0, H, tile_size[1] - overlap))
+        if use_tqdm
+        else range(0, H, tile_size[1] - overlap)
+    )
+    for y0 in iterator:
         y1 = min(y0 + tile_size[1], H)
         for x0 in range(0, W, tile_size[0] - overlap):
             x1 = min(x0 + tile_size[0], W)
@@ -496,12 +519,6 @@ def easyocr_blocks_tiled(image, reader, tile_size=(1000, 1000), overlap=50):
     return all_text_blocks
 
 
-
-
-
-
-
-
 # =============================
 # Robust left-crop to remove cabin border before OCR
 # =============================
@@ -514,9 +531,11 @@ def compute_cut_x_from_roi(roi, debug_path=None):
     h, w = gray.shape
 
     # Parametri adattivi
-    scan_rows = min(max(int(0.05 * h), 8), min(60, h))  # quanti pixel in alto considerare
-    max_shift = max(1, int(0.45 * w))                   # non tagliare oltre questa frazione
-    min_remaining_w = max(20, int(0.10 * w))            # mantieni almeno questa larghezza
+    scan_rows = min(
+        max(int(0.05 * h), 8), min(60, h)
+    )  # quanti pixel in alto considerare
+    max_shift = max(1, int(0.45 * w))  # non tagliare oltre questa frazione
+    min_remaining_w = max(20, int(0.10 * w))  # mantieni almeno questa larghezza
 
     # 1) proiezione orizzontale (media dei primi scan_rows)
     top_patch = gray[:scan_rows, :].astype(np.float32)
@@ -541,7 +560,9 @@ def compute_cut_x_from_roi(roi, debug_path=None):
     cut_x = None
 
     # Preferiamo trovare un punto dove il gradiente è positivo e la smooth supera value_thresh
-    candidates = np.where((np.concatenate(([0.0], grad)) > grad_thresh) & (smooth > value_thresh))[0]
+    candidates = np.where(
+        (np.concatenate(([0.0], grad)) > grad_thresh) & (smooth > value_thresh)
+    )[0]
     if candidates.size > 0:
         cut_x = int(max(0, candidates[0] - 1))  # piccolo left margin
     else:
@@ -581,10 +602,6 @@ def compute_cut_x_from_roi(roi, debug_path=None):
         cv2.imwrite(debug_path, vis)
 
     return cut_x
-
-
-
-
 
 
 # Assumed available functions from your codebase:
@@ -651,20 +668,9 @@ def shift_boxes_to_global(blocks_local, roi):
     return out
 
 
-
-
-
-
-
-
-
-
 def square_center(bbox):
     x, y, w, h = bbox
     return (x + w / 2, y + h / 2)
-
-
-
 
 
 def normalize_TUG(s):
@@ -684,7 +690,6 @@ def normalize_TUG(s):
     return s.strip()
 
 
-
 def parse_info_text(s):
     original = s.strip()
 
@@ -693,10 +698,10 @@ def parse_info_text(s):
     cabina_match = re.search(cabina_pattern, original)
     cabina_id = cabina_match.group(1).strip() if cabina_match else ""
 
-    rest = original[len(cabina_id):].strip() if cabina_id else original
+    rest = original[len(cabina_id) :].strip() if cabina_id else original
 
     # --- 2) Estrarre tutti i T/U/G (anche multipli)
-    #TUG_PATTERN = r"([TUG]\s*[0O]?\d+\s*\([^)]*\))"
+    # TUG_PATTERN = r"([TUG]\s*[0O]?\d+\s*\([^)]*\))"
     TUG_PATTERN = r"([TUG]O?\s*\d+\s*\([^)]*\))"
 
     matches = re.findall(TUG_PATTERN, rest)
@@ -730,10 +735,6 @@ def parse_info_text(s):
     )
 
 
-
-
-
-
 def detect_text(
     path_in: str,
     triangles,
@@ -757,10 +758,9 @@ def detect_text(
     squares = find_squares_contours_strict(img, debug_prefix="debug/test")
     print(f"[DBG] Cabine rilevate: {len(squares)}")
 
-
     # Convert each triangle into the same tuple format used for squares
     for tri in triangles:
-        pts = np.array(tri, dtype=np.int32).reshape((-1,1,2))
+        pts = np.array(tri, dtype=np.int32).reshape((-1, 1, 2))
         x, y, w, h = cv2.boundingRect(pts)
         squares.append(("TRIANGLE", (x, y, w, h)))
 
@@ -791,12 +791,16 @@ def detect_text(
     else:
         print(f"{get_available_memory_gb()} GB of memory, going for the tiling")
         reader = easyocr.Reader(["en", "it"], gpu=False)
-        text_blocks = easyocr_blocks_tiled(gray_ocr, reader, tile_size=(1000, 1000), overlap=50)
+        text_blocks = easyocr_blocks_tiled(
+            gray_ocr, reader, tile_size=(1000, 1000), overlap=50
+        )
 
     print(f"[DBG] Blocchi OCR trovati: {len(text_blocks)}")
 
     # 4) Rimuovi testo interno alle cabine (manteniamo questa fase globale)
-    text_blocks = remove_text_inside_cabins(text_blocks, squares, margin=8, center_only=True, overlap_thresh=0.25)
+    text_blocks = remove_text_inside_cabins(
+        text_blocks, squares, margin=8, center_only=True, overlap_thresh=0.25
+    )
 
     # debug: disegna text_blocks globali
     dbg_img = img.copy()
@@ -810,10 +814,14 @@ def detect_text(
     all_local_blocks_global_coords = []
 
     # tuning: pad multipliers (left, right, top, bottom)
-    #roi_pads = (0.6, 1.6, 0.3, 1.1)
+    # roi_pads = (0.6, 1.6, 0.3, 1.1)
     roi_pads = (0.3, 5, 0.6, 1.5)
+    use_tqdm = True
+    if getattr(sys, "frozen", False):
+        use_tqdm = False  # no console in PyInstaller windowed mode
 
-    for cab_idx, (_, cab_bbox) in enumerate(tqdm(squares, desc="Processing cabins")):
+    iterator = tqdm(squares, desc="Processing cabins") if use_tqdm else squares
+    for cab_idx, (_, cab_bbox) in enumerate(iterator):
         roi = expand_region_around_cabina(cab_bbox, img.shape, pads=roi_pads)
         x1, y1, x2, y2 = roi
         roi_w = x2 - x1
@@ -826,9 +834,13 @@ def detect_text(
 
         # unisci le linee dentro il ROI
         try:
-            local_line_boxes = merge_lines_morph(local_text_blocks, (roi_h, roi_w), hor_kernel_w_frac=0.009, min_area=60)
+            local_line_boxes = merge_lines_morph(
+                local_text_blocks, (roi_h, roi_w), hor_kernel_w_frac=0.009, min_area=60
+            )
         except Exception:
-            local_line_boxes = merge_lines_morph(local_text_blocks, (roi_h, roi_w), hor_kernel_w_frac=0.008, min_area=60)
+            local_line_boxes = merge_lines_morph(
+                local_text_blocks, (roi_h, roi_w), hor_kernel_w_frac=0.008, min_area=60
+            )
 
         if not local_line_boxes:
             continue
@@ -848,13 +860,23 @@ def detect_text(
 
     # divisione dei blocchi sovrapposti che derivano da ROI vicine
     if all_local_blocks_global_coords:
-        all_local_blocks_global_coords = dedup_blocks_by_iou(all_local_blocks_global_coords, iou_thresh=0.5)
+        all_local_blocks_global_coords = dedup_blocks_by_iou(
+            all_local_blocks_global_coords, iou_thresh=0.5
+        )
 
     blocks_global = all_local_blocks_global_coords
     print(f"[DBG] Blocchi locali consolidati (tot): {len(blocks_global)}")
 
     # 7) OCR individuale su ciascun blocco consolidato (già in global coords)
-    for idx, blk in tqdm(enumerate(blocks_global), desc="Single block OCR"):
+    use_tqdm = True
+    if getattr(sys, "frozen", False):
+        use_tqdm = False  # no console in PyInstaller windowed mode
+    iterator = (
+        tqdm(enumerate(blocks_global), desc="Single block OCR")
+        if use_tqdm
+        else enumerate(blocks_global)
+    )
+    for idx, blk in iterator:
         x, y, w, h = blk["bbox"]
         # skip invalid
         if w <= 0 or h <= 0:
@@ -878,12 +900,16 @@ def detect_text(
         _, mask = cv2.threshold(roi_gray, 200, 255, cv2.THRESH_BINARY)
         mask = cv2.medianBlur(mask, 3)
         Hm, Wm = mask.shape[:2]
-        #max_shift = int(0.10 * Wm)
+        # max_shift = int(0.10 * Wm)
         max_shift = max(1, int(0.10 * Wm))
 
-        col_dark_frac = np.array([np.sum(mask[:, x] == 0) / float(Hm) for x in range(Wm)])
+        col_dark_frac = np.array(
+            [np.sum(mask[:, x] == 0) / float(Hm) for x in range(Wm)]
+        )
         inv = 255 - mask
-        num, labels, stats, centroids = cv2.connectedComponentsWithStats(inv, connectivity=8)
+        num, labels, stats, centroids = cv2.connectedComponentsWithStats(
+            inv, connectivity=8
+        )
         left_touching_widths = []
         for lab in range(1, num):
             xx, yy, wcc, hcc, area = stats[lab]
@@ -907,9 +933,11 @@ def detect_text(
             window = int(max(5, max_shift // 6))
             prof = col_dark_frac[:max_shift].copy()
             kernel = np.ones(window) / window
-            prof_smooth = np.convolve(prof, kernel, mode='same')
+            prof_smooth = np.convolve(prof, kernel, mode="same")
             right_half = prof_smooth[max(max_shift // 3, 1) : max_shift]
-            baseline = np.median(right_half) if len(right_half) > 0 else np.median(prof_smooth)
+            baseline = (
+                np.median(right_half) if len(right_half) > 0 else np.median(prof_smooth)
+            )
             abs_min = 0.03
             frac_of_baseline = 0.6
             adaptive_thresh = max(abs_min, min(0.15, baseline * frac_of_baseline))
@@ -935,14 +963,18 @@ def detect_text(
         roi_gray = cv2.cvtColor(roi_up, cv2.COLOR_BGR2GRAY)
         roi_gray = cv2.normalize(roi_gray, None, 0, 255, cv2.NORM_MINMAX)
         roi_gray = cv2.convertScaleAbs(roi_gray, alpha=1.6, beta=-30)
-        _, roi_bin = cv2.threshold(roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU)
+        _, roi_bin = cv2.threshold(
+            roi_gray, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
+        )
         roi_bin = cv2.medianBlur(roi_bin, 3)
         kernel = np.ones((2, 2), np.uint8)
         roi_bin = cv2.dilate(roi_bin, kernel, iterations=1)
         cv2.imwrite(f"outputs/img/clean_block_{idx:02d}.png", roi_bin)
 
         custom_config = r"--psm 6 -c preserve_interword_spaces=1 -c textord_space_size_is_variable=1 --dpi 300"
-        text = pytesseract.image_to_string(roi_bin, config=custom_config, lang="ita+eng")
+        text = pytesseract.image_to_string(
+            roi_bin, config=custom_config, lang="ita+eng"
+        )
         text = text.strip()
         text = re.sub(r"\s{2,}", " ", text)
         text = re.sub(r"([A-Z])([0-9])", r"\1 \2", text)
@@ -962,12 +994,12 @@ def detect_text(
         bx, by, bw, bh = b["bbox"]
         cv2.rectangle(annotated, (bx, by), (bx + bw, by + bh), (0, 255, 0), 2)
 
-    '''
+    """
     for i, (_, bbox) in enumerate(squares):
         x, y, w, h = bbox
         cv2.rectangle(annotated, (x, y), (x + w, y + h), (0, 140, 255), 2)
         cv2.putText(annotated, f"C{i}", (x, y - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 140, 255), 1)
-    '''
+    """
 
     for i, (_, bbox) in enumerate(squares, start=1):
         x, y, w, h = bbox
@@ -989,22 +1021,18 @@ def detect_text(
             cv2.LINE_AA,
         )
 
-
-
     # estrae gli id
     ids_per_square = []
     for _, bbox in squares:
         sid, conf = extract_inner_id(img, bbox)
         ids_per_square.append((sid.strip(), conf))
 
-
-
     # associa cabina con il testo più vicino alla sua destra
     associations = []
     for i, ((_, bbox), (cabina_id, conf)) in enumerate(zip(squares, ids_per_square)):
         x, y, w, h = bbox
         cx, cy = x + w // 2, y + h // 2
-        ref_x = x + w   # bordo destro della cabina
+        ref_x = x + w  # bordo destro della cabina
 
         best_idx, best_dist = -1, 1e9
         best_text = ""
@@ -1014,22 +1042,24 @@ def detect_text(
             bx_center = bx + bw // 2
             by_center = by + bh // 2
             bx_left = bx  # margine sinistro
-                
+
             # 🔥 nuovo criterio: blocco solo se è a destra della cabina
             if bx_center > ref_x:
-                #dist = np.hypot(bx_center - cx, by_center - cy)
+                # dist = np.hypot(bx_center - cx, by_center - cy)
                 dist = np.hypot(bx_left - cx, by_center - cy)
 
                 if dist < best_dist:
                     best_idx, best_dist = j, dist
                     best_text = (b.get("text") or b.get("txt") or "").strip()
 
-        associations.append({
-            "cabina_index": i,
-            "cabina_id": cabina_id,
-            "cabina_conf": float(conf) if conf is not None else 0.0,
-            "info_text": best_text if best_idx != -1 else "",
-        })
+        associations.append(
+            {
+                "cabina_index": i,
+                "cabina_id": cabina_id,
+                "cabina_conf": float(conf) if conf is not None else 0.0,
+                "info_text": best_text if best_idx != -1 else "",
+            }
+        )
 
         # draw link
         if best_idx != -1:
@@ -1040,7 +1070,6 @@ def detect_text(
 
     cv2.imwrite(path_out, annotated)
     print(f"✅ Annotazione salvata in {path_out}")
-
 
     for a in associations:
         raw_text = (
@@ -1062,5 +1091,4 @@ def detect_text(
         _, bbox = squares[a["cabina_index"]]
         a["bbox"] = bbox
 
-        
     return associations

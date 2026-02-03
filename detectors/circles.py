@@ -1,3 +1,4 @@
+import sys
 import cv2
 import numpy as np
 from tqdm import tqdm
@@ -27,8 +28,11 @@ def detect_black_circles(
 
     h, w = gray.shape
     black_circle_points = []
-
-    for x, y in tqdm(nodes_centers, desc="Detecting black circles"):
+    use_tqdm = True
+    if getattr(sys, "frozen", False):
+        use_tqdm = False  # no console in PyInstaller windowed mode
+    iterator = tqdm(nodes_centers, desc="Detecting black circles") if use_tqdm else nodes_centers
+    for x, y in iterator:
         # Bounding box della regione circolare
         x1, y1 = max(0, x - radius), max(0, y - radius)
         x2, y2 = min(w - 1, x + radius), min(h - 1, y + radius)
@@ -123,8 +127,11 @@ def detect_hollow_circles_with_letters(
 
     # Per i pixel di bordo (rilevamento del contorno del cerchio)
     edge_integral = cv2.integral(edges.astype(np.uint8) // 255)
-
-    for x, y in tqdm(nodes_centers, desc="Detecting hollow circles with letters"):
+    use_tqdm = True
+    if getattr(sys, "frozen", False):
+        use_tqdm = False  # no console in PyInstaller windowed mode
+    iterator = tqdm(nodes_centers, desc="Detecting hollow circles with letters") if use_tqdm else nodes_centers
+    for x, y in iterator:
         # Definizione delle regioni
         # Cerchio esterno (cerchio completo)
         x1_outer = max(0, x - radius)
@@ -273,8 +280,11 @@ def detect_small_black_circles(
 
     h, w = gray.shape
     black_circle_points = []
-
-    for x, y in tqdm(nodes_centers, desc="Detecting small black circles"):
+    use_tqdm = True
+    if getattr(sys, "frozen", False):
+        use_tqdm = False  # no console in PyInstaller windowed mode
+    iterator = tqdm(nodes_centers, desc="Detecting small black circles") if use_tqdm else nodes_centers
+    for x, y in iterator:
         # Bounding box della regione circolare
         x1, y1 = max(0, x - radius), max(0, y - radius)
         x2, y2 = min(w - 1, x + radius), min(h - 1, y + radius)
