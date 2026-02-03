@@ -1,6 +1,7 @@
 import cv2
 from utils.constants import NODE_SIZE
 from tqdm import tqdm
+import sys
 
 
 def detect_node_grid(
@@ -30,24 +31,25 @@ def detect_node_grid(
     img_area = img.shape[0] * img.shape[1]
     nodes = []
     nodes_centers = []
-
-    for c in tqdm(contours, desc="Detecting square nodes"):
+    use_tqdm = True
+    if getattr(sys, "frozen", False):
+        use_tqdm = False  # no console in PyInstaller windowed mode
+    iterator = tqdm(contours, desc="Detecting square nodes") if use_tqdm else contours
+    for c in iterator:
         area = cv2.contourArea(c)
         if not (
             node_min_area_ratio * img_area <= area <= node_max_area_ratio * img_area
         ):
             continue
-
-        for c in contours:
-            x, y, w, h = cv2.boundingRect(c)
-            if (
-                abs(w - node_size) < 10 and abs(h - node_size) < 10
-            ):  # consente una piccola tolleranza
-                nodes.append((x, y, w, h))
-                nodes_centers.append((x + w // 2, y + h // 2))
-                if debug_img:
-                    cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
-                    # cv2.circle(img, (x + w // 2, y + h // 2), 50, (255, 0, 0), -1)
+        x, y, w, h = cv2.boundingRect(c)
+        if (
+            abs(w - node_size) < 10 and abs(h - node_size) < 10
+        ):  # consente una piccola tolleranza
+            nodes.append((x, y, w, h))
+            nodes_centers.append((x + w // 2, y + h // 2))
+            if debug_img:
+                cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                # cv2.circle(img, (x + w // 2, y + h // 2), 50, (255, 0, 0), -1)
 
     # Salva il risultato
     if debug_img:

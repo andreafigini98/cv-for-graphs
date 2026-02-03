@@ -12,11 +12,22 @@ from pathlib import Path
 
 def poppler_path() -> str | None:
     if platform.system() != "Windows":
-        return None  # let pdf2image use PATH
+        return None
 
-    # Windows only
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent))
-    return str(base / "poppler" / "bin")
+    if getattr(sys, "frozen", False):
+        # PyInstaller: poppler bundled under poppler/
+        base = Path(sys._MEIPASS)
+        path = base / "poppler" / "Library" / "bin"
+    else:
+        # Dev: repo root (one level above utils/)
+        base = Path(__file__).resolve().parents[1]
+        path = base / "poppler" / "Library" / "bin"
+
+    exe = path / "pdfinfo.exe"
+    if not exe.exists():
+        raise RuntimeError(f"Poppler not found: {exe}")
+
+    return str(path)
 
 
 #     ### WINDOWS DEBUG PATH ###
