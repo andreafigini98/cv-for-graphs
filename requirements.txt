@@ -1,0 +1,10 @@
+opencv-python
+tqdm
+pdf2image
+numpy
+easyocr
+matplotlib
+openpyxl
+pytesseract
+networkx
+psutil

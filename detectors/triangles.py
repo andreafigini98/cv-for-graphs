@@ -2,15 +2,15 @@ import cv2
 import numpy as np
 from utils.constants import NODE_SIZE
 from tqdm import tqdm
-
+import sys
 
 def _points_close(p1, p2, tol=3):
-    """Return True if two points are within tol pixels."""
+    """Restituisce True se due punti sono entro tol pixel di distanza."""
     return np.hypot(p1[0] - p2[0], p1[1] - p2[1]) <= tol
 
 
 def _triangle_area(p1, p2, p3):
-    """Compute area of triangle given three points."""
+    """Calcola l’area di un triangolo dati tre punti."""
     return abs(
         (p1[0] * (p2[1] - p3[1]) + p2[0] * (p3[1] - p1[1]) + p3[0] * (p1[1] - p2[1]))
         / 2.0
@@ -18,10 +18,10 @@ def _triangle_area(p1, p2, p3):
 
 
 def _triangle_angles(p1, p2, p3):
-    """Return the three internal angles of a triangle in degrees."""
+    """Restituisce i tre angoli interni di un triangolo in gradi."""
 
     def angle(a, b, c):
-        # angle at point b
+        # angolo nel punto b
         ba = np.array(a) - np.array(b)
         bc = np.array(c) - np.array(b)
         cos_theta = np.dot(ba, bc) / (np.linalg.norm(ba) * np.linalg.norm(bc) + 1e-9)
@@ -36,8 +36,8 @@ def _triangle_angles(p1, p2, p3):
 
 def _find_centroid_tringle(triangle):
     """
-    Compute the centroid of a triangle given 3 points.
-    Each point is a tuple (x, y).
+    Calcola il baricentro di un triangolo dati 3 punti.
+    Ogni punto è una tupla (x, y).
     """
 
     p1 = triangle[0]
@@ -52,24 +52,25 @@ def _find_centroid_tringle(triangle):
 
 def _check_centroid_distance(triangle_list, new_candidate):
     """
-    Returns True if the new candidate centroid is not too near to another
-    triangle
+    Restituisce True se il baricentro del nuovo candidato
+    non è troppo vicino a quello di un altro triangolo.
     """
 
-    # If its the first valid candidate append it
+    # Se è il primo candidato valido, viene accettato
     if len(triangle_list) == 0:
         return True
 
-    # get the centroid of all the previous candidate (can be maybe optimized)
+    # Calcola il baricentro di tutti i candidati precedenti (potenzialmente ottimizzabile)
     centroid_list = []
     for triangle in triangle_list:
         centroid_list.append(_find_centroid_tringle(triangle))
-    # find the centroid of the new candidate
-    c_new_candidate = _find_centroid_tringle(new_candidate)
-    # return true if the new candidate is at least NODE_SIZE away from any other candidates
 
+    # Calcola il baricentro del nuovo candidato
+    c_new_candidate = _find_centroid_tringle(new_candidate)
+
+    # Restituisce True se il nuovo candidato è distante almeno NODE_SIZE dagli altri
     for c in centroid_list:
-        # If the two centroid are too close return false
+        # Se i due baricentri sono troppo vicini, restituisce False
         if (
             abs(c[0] - c_new_candidate[0]) < NODE_SIZE
             and abs(c[1] - c_new_candidate[1]) < NODE_SIZE
@@ -86,19 +87,20 @@ def detect_triangles_from_edges(
     debug_img=False,
 ):
     """
-    Detect triangles by matching two oblique edges and a base edge that share nodes.
+    Rileva triangoli individuando due lati obliqui e una base
+    che condividono nodi comuni.
 
     Args:
-        img (np.ndarray): Original image (for drawing).
-        edges_list (list[((x1, y1), (x2, y2))]): List of detected edges.
-        angle_tolerance (float): Angle tolerance in degrees.
-        length_tolerance (float): Allowable difference in edge lengths (fraction).
+        img (np.ndarray): Immagine originale (per il disegno).
+        edges_list (list[((x1, y1), (x2, y2))]): Lista dei bordi rilevati.
+        angle_tolerance (float): Tolleranza sugli angoli in gradi.
+        length_tolerance (float): Differenza ammessa nella lunghezza dei lati (frazione).
     """
 
     triangles = []
 
     lines = cv2.HoughLinesP(
-        img_processed, 1, np.pi / 180, threshold=50, minLineLength=70, maxLineGap=10
+        img_processed, 1, np.pi / 180, threshold=40, minLineLength=70, maxLineGap=10
     )
     edges_list = []
     if lines is not None:
@@ -107,8 +109,12 @@ def detect_triangles_from_edges(
             edges_list.append(((x1, y1), (x2, y2)))
 
     tol = 20
-    # Group edges by shared endpoints
-    for (x1a, y1a), (x2a, y2a) in tqdm(edges_list, desc="Detecting triangles"):
+    # Raggruppa i bordi che condividono estremi comuni
+    use_tqdm = True
+    if getattr(sys, "frozen", False):
+        use_tqdm = False  # no console in PyInstaller windowed mode
+    iterator = tqdm(edges_list, desc="Detecting triangles") if use_tqdm else edges_list
+    for (x1a, y1a), (x2a, y2a) in iterator:
         for (x1b, y1b), (x2b, y2b) in edges_list:
             if _points_close((x1a, y1a), (x1b, y1b), tol) and not _points_close(
                 (x2a, y2a), (x2b, y2b), tol
@@ -133,19 +139,19 @@ def detect_triangles_from_edges(
             else:
                 continue
 
-            # con il check dell area se ne perde uno per qualche motivo
+            # Con il controllo dell’area si perde talvolta un triangolo valido
             # area = _triangle_area(shared, other_a, other_b)
             # min_area = (NODE_SIZE * NODE_SIZE / 2) * 0.97
             # max_area = (NODE_SIZE * NODE_SIZE / 2) * 1.03
 
             # if not (min_area <= area <= max_area):
-            #     continue  # skip spurious triangles
+            #     continue  # scarta triangoli spurii
 
-            desired_angles = (52.2, 63.9)  # example
-            angle_tolerance = 5  # degrees
+            desired_angles = (52.2, 63.9)  # esempio
+            angle_tolerance = 5  # gradi
 
             angles = _triangle_angles(shared, other_a, other_b)
-            # compare sets ignoring order
+            # Confronta gli insiemi ignorando l’ordine
             if all(
                 any(abs(a - da) <= angle_tolerance for a in angles)
                 for da in desired_angles
@@ -158,13 +164,14 @@ def detect_triangles_from_edges(
                 ):
 
                     triangles.append(triangle)
-                    # Draw it
+                    # Disegno del triangolo
                     if debug_img:
                         pts = np.array([shared, other_a, other_b], np.int32).reshape(
                             (-1, 1, 2)
                         )
                         cv2.polylines(img, [pts], True, (0, 255, 255), 3)
+
     if debug_img:
         cv2.imwrite(output_path, img)
-    print(f"{len(triangles)} triangles saved to {output_path}")
+    print(f"{len(triangles)} triangoli salvati in {output_path}")
     return triangles

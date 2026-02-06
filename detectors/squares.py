@@ -1,6 +1,7 @@
 import cv2
 from utils.constants import NODE_SIZE
 from tqdm import tqdm
+import sys
 
 
 def detect_node_grid(
@@ -13,25 +14,28 @@ def detect_node_grid(
     debug_img=False,
 ):
     """
-    Detect nodes and edges in a graph image and draw them on the image.
+    Rileva i nodi e gli archi in un’immagine di un grafo e li disegna sull’immagine.
 
     Args:
-        image_path (str): Path to the image.
-        output_path (str): Path to save the result.
-        node_min_area_ratio (float): Minimum relative area for nodes.
-        node_max_area_ratio (float): Maximum relative area for nodes.
+        image_path (str): Percorso dell’immagine.
+        output_path (str): Percorso in cui salvare il risultato.
+        node_min_area_ratio (float): Area relativa minima per i nodi.
+        node_max_area_ratio (float): Area relativa massima per i nodi.
 
     Returns:
         None
     """
 
-    # ---------------- Square detection ----------------
+    # ---------------- Rilevamento dei quadrati ----------------
     contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
     img_area = img.shape[0] * img.shape[1]
     nodes = []
     nodes_centers = []
-
-    for c in tqdm(contours, desc="Detecting square nodes"):
+    use_tqdm = True
+    if getattr(sys, "frozen", False):
+        use_tqdm = False  # no console in PyInstaller windowed mode
+    iterator = tqdm(contours, desc="Detecting square nodes") if use_tqdm else contours
+    for c in iterator:
         area = cv2.contourArea(c)
         if not (
             node_min_area_ratio * img_area <= area <= node_max_area_ratio * img_area
@@ -42,18 +46,18 @@ def detect_node_grid(
             x, y, w, h = cv2.boundingRect(c)
             if (
                 abs(w - node_size) < 10 and abs(h - node_size) < 10
-            ):  # allow small tolerance
+            ):  # consente una piccola tolleranza
                 nodes.append((x, y, w, h))
                 nodes_centers.append((x + w // 2, y + h // 2))
                 if debug_img:
                     cv2.rectangle(img, (x, y), (x + w, y + h), (0, 255, 0), 2)
                     # cv2.circle(img, (x + w // 2, y + h // 2), 50, (255, 0, 0), -1)
 
-    # Save the result
+    # Salva il risultato
     if debug_img:
         cv2.imwrite(output_path, img)
 
-    # deduplicate nodes_centers
+    # Rimuove i duplicati dai centri dei nodi
     return list(set(nodes_centers))
 
 
@@ -61,18 +65,18 @@ def detect_squares_with_letters(
     nodes_centers,
     img,
     side=NODE_SIZE,
-    edge_thr=80,  # Canny edge threshold
-    edge_ratio_thr=0.08,  # Edge pixel ratio in border region
-    inner_ratio_thr=0.5,  # Brightness ratio inside square
-    border_width=4,  # Width of square border to check for edges
-    shape_tolerance=0.1,  # Allowed aspect ratio deviation for square
+    edge_thr=80,  # Soglia Canny per il rilevamento dei bordi
+    edge_ratio_thr=0.08,  # Rapporto di pixel di bordo nella regione perimetrale
+    inner_ratio_thr=0.5,  # Rapporto di luminosità all’interno del quadrato
+    border_width=4,  # Spessore del bordo del quadrato da analizzare
+    shape_tolerance=0.1,  # Deviazione ammessa del rapporto di forma per il quadrato
     debug_img=False,
     output_path="outputs/04_squares_with_letters.png",
     extract_text=True,
 ):
     """
-    Detect hollow or bright squares with letters or symbols inside.
-    Includes shape verification to exclude triangles or other polygons.
+    Rileva quadrati vuoti o luminosi contenenti lettere o simboli al loro interno.
+    Include una verifica della forma per escludere triangoli o altri poligoni.
     """
     import numpy as np
     import cv2
@@ -89,7 +93,7 @@ def detect_squares_with_letters(
     h, w = gray.shape
     edges = cv2.Canny(gray, edge_thr, edge_thr * 2)
 
-    # Integral images
+    # Immagini integrali
     bright_mask = (gray > 200).astype(np.uint8)
     bright_integral = cv2.integral(bright_mask)
     edge_integral = cv2.integral(edges.astype(np.uint8) // 255)
@@ -99,15 +103,15 @@ def detect_squares_with_letters(
     for x, y in tqdm(nodes_centers, desc="Detecting squares with letters"):
         half_side = side // 2
 
-        # ROI boundaries
+        # Limiti della ROI
         x1_outer, y1_outer = max(0, x - half_side), max(0, y - half_side)
         x2_outer, y2_outer = min(w - 1, x + half_side), min(h - 1, y + half_side)
 
-        # Skip if ROI too small
+        # Salta se la ROI è troppo piccola
         if x2_outer - x1_outer < 10 or y2_outer - y1_outer < 10:
             continue
 
-        # --- STEP 1: SHAPE CHECK (ensure it's square-like) ---
+        # --- STEP 1: CONTROLLO DELLA FORMA (verifica che sia simile a un quadrato) ---
         roi_edges = edges[y1_outer:y2_outer, x1_outer:x2_outer]
         contours, _ = cv2.findContours(
             roi_edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE
@@ -118,17 +122,17 @@ def detect_squares_with_letters(
             peri = cv2.arcLength(cnt, True)
             approx = cv2.approxPolyDP(cnt, 0.04 * peri, True)
 
-            if len(approx) == 4:  # 4 vertices → candidate rectangle
+            if len(approx) == 4:  # 4 vertici → rettangolo candidato
                 x_rect, y_rect, w_rect, h_rect = cv2.boundingRect(approx)
                 # breakpoint()
                 aspect_ratio = w_rect / float(h_rect)
                 if 1 - shape_tolerance <= aspect_ratio <= 1 + shape_tolerance:
                     is_square_shape = True
-                    break  # found at least one valid square
+                    break  # trovato almeno un quadrato valido
         if not is_square_shape:
-            continue  # skip — not a square
+            continue  # salta — non è un quadrato
 
-        # --- STEP 2: BRIGHTNESS & EDGE RATIO CHECKS ---
+        # --- STEP 2: CONTROLLI SU LUMINOSITÀ E RAPPORTO DEI BORDI ---
         x1_inner, y1_inner = (
             max(0, x - half_side + border_width),
             max(0, y - half_side + border_width),
@@ -144,7 +148,7 @@ def detect_squares_with_letters(
         if inner_area <= 0 or border_area <= 0:
             continue
 
-        # Brightness
+        # Luminosità
         inner_bright_sum = (
             bright_integral[y2_inner + 1, x2_inner + 1]
             - bright_integral[y1_inner, x2_inner + 1]
@@ -153,7 +157,7 @@ def detect_squares_with_letters(
         )
         inner_bright_ratio = inner_bright_sum / inner_area
 
-        # Edge density
+        # Densità dei bordi
         outer_edge_sum = (
             edge_integral[y2_outer + 1, x2_outer + 1]
             - edge_integral[y1_outer, x2_outer + 1]
@@ -169,7 +173,7 @@ def detect_squares_with_letters(
         border_edge_sum = outer_edge_sum - inner_edge_sum
         border_edge_ratio = border_edge_sum / border_area
 
-        # --- STEP 3: Check text or dark pixels ---
+        # --- STEP 3: Verifica della presenza di testo o pixel scuri ---
         center_roi = gray[y1_inner:y2_inner, x1_inner:x2_inner]
         has_dark_pixels = np.any(center_roi < 150) if center_roi.size > 0 else False
 
@@ -223,5 +227,5 @@ def detect_squares_with_letters(
     if debug_img:
         cv2.imwrite(output_path, img_copy)
 
-    print(len(squares), "squares with letters detected.")
+    print(len(squares), "quadrati con lettere rilevati.")
     return squares

@@ -1,11 +1,9 @@
+import sys
 import cv2
 import numpy as np
-import pytesseract
 from tqdm import tqdm
 
 
-# TODO integrarlo con detect_hollow_circles_with_letters
-# che secondo me é piú robusta
 def detect_black_circles(
     nodes_centers,
     img,
@@ -21,22 +19,26 @@ def detect_black_circles(
     else:
         gray = img
 
-    # --- BLACK FILLED CIRCLES DETECTION ---
+    # --- RILEVAMENTO DI CERCHI NERI PIENI ---
 
-    # Binary mask of black pixels
+    # Maschera binaria dei pixel neri
     black_mask = (gray < black_thr).astype(np.uint8)
-    # Integral image for fast area sum
+    # Immagine integrale per il calcolo rapido dell’area
     integral = cv2.integral(black_mask)
 
     h, w = gray.shape
     black_circle_points = []
-
-    for x, y in tqdm(nodes_centers, desc="Detecting black circles"):
-        # Bounding box of circular region
+    use_tqdm = True
+    if getattr(sys, "frozen", False):
+        use_tqdm = False  # no console in PyInstaller windowed mode
+    iterator = tqdm(nodes_centers, desc="Detecting black circles") if use_tqdm else nodes_centers
+    for x, y in iterator:
+        # Bounding box della regione circolare
         x1, y1 = max(0, x - radius), max(0, y - radius)
         x2, y2 = min(w - 1, x + radius), min(h - 1, y + radius)
 
-        # Fast rectangular region sum using the integral image
+        # Calcolo rapido della somma nella regione rettangolare
+        # utilizzando l’immagine integrale
         region_sum = (
             integral[y2 + 1, x2 + 1]
             - integral[y1, x2 + 1]
@@ -44,7 +46,8 @@ def detect_black_circles(
             + integral[y1, x1]
         )
 
-        # Approximate ratio (rectangular proxy)
+        # Rapporto approssimato di pixel neri
+        # (approssimazione rettangolare della regione circolare)
         black_ratio = region_sum / ((y2 - y1) * (x2 - x1))
 
         if black_ratio >= ratio_thr:
@@ -58,53 +61,54 @@ def detect_black_circles(
     return black_circle_points
 
 
+
 def detect_hollow_circles_with_letters(
     nodes_centers,
     img,
     radius=25,
-    edge_thr=50,  # Threshold for edge detection
-    edge_ratio_thr=0.1,  # Ratio of edge pixels in ring area
-    inner_ratio_thr=0.5,  # Ratio of white pixels in center (hollow)
-    ring_width=2,  # Width of the ring to check for edges
+    edge_thr=50,  # Soglia per il rilevamento dei bordi
+    edge_ratio_thr=0.1,  # Rapporto di pixel di bordo nell’area anulare
+    inner_ratio_thr=0.5,  # Rapporto di pixel bianchi nell’area centrale (cerchio vuoto)
+    ring_width=2,  # Spessore dell’anello in cui verificare la presenza dei bordi
     debug_img=False,
     output_path="outputs/04_hollow_circles.png",
     extract_text=True,
 ):
     """
-    Detect hollow circles with letters/text inside.
+    Rileva cerchi vuoti contenenti lettere o testo al loro interno.
 
-    Parameters:
+    Parametri:
     -----------
     nodes_centers : list of tuples
-        List of (x, y) coordinates to check
+        Lista di coordinate (x, y) da analizzare
     img : numpy array
-        Input image
+        Immagine di input
     radius : int
-        Radius of the circle to check
+        Raggio del cerchio da verificare
     edge_thr : int
-        Threshold for edge detection (Canny)
+        Soglia per il rilevamento dei bordi (Canny)
     edge_ratio_thr : float
-        Minimum ratio of edge pixels in the ring area
+        Rapporto minimo di pixel di bordo nell’area anulare
     inner_ratio_thr : float
-        Minimum ratio of white/bright pixels in center (to confirm hollow)
+        Rapporto minimo di pixel bianchi/luminosi nell’area centrale (per confermare il cerchio vuoto)
     ring_width : int
-        Width of the ring to check for circle edge
+        Spessore dell’anello in cui verificare il bordo del cerchio
     draw : bool
-        Whether to draw detections on image
+        Indica se disegnare i rilevamenti sull’immagine
     extract_text : bool
-        Whether to extract text using OCR
+        Indica se estrarre il testo tramite OCR
 
-    Returns:
-    --------
+    Restituisce:
+    -----------
     hollow_circles : list of dict
-        List of detected hollow circles with their properties
+        Lista dei cerchi vuoti rilevati con le relative proprietà
     img_result : numpy array
-        Image with drawn detections
+        Immagine con i rilevamenti disegnati
     """
 
     img_copy = img.copy()
 
-    # Convert to grayscale if needed
+    # Conversione in scala di grigi se necessario
     if len(img.shape) == 3:
         gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     else:
@@ -113,46 +117,49 @@ def detect_hollow_circles_with_letters(
     h, w = gray.shape
     hollow_circles = []
 
-    # Apply edge detection to find circle boundaries
+    # Applicazione del rilevamento dei bordi per individuare i contorni dei cerchi
     edges = cv2.Canny(gray, edge_thr, edge_thr * 2)
 
-    # Create integral images for fast computation
-    # For white/bright pixels (hollow center detection)
+    # Creazione delle immagini integrali per un calcolo rapido
+    # Per i pixel bianchi/luminosi (rilevamento del centro vuoto)
     bright_mask = (gray > 200).astype(np.uint8)
     bright_integral = cv2.integral(bright_mask)
 
-    # For edge pixels (circle boundary detection)
+    # Per i pixel di bordo (rilevamento del contorno del cerchio)
     edge_integral = cv2.integral(edges.astype(np.uint8) // 255)
-
-    for x, y in tqdm(nodes_centers, desc="Detecting hollow circles with letters"):
-        # Define regions
-        # Outer circle (full circle)
+    use_tqdm = True
+    if getattr(sys, "frozen", False):
+        use_tqdm = False  # no console in PyInstaller windowed mode
+    iterator = tqdm(nodes_centers, desc="Detecting hollow circles with letters") if use_tqdm else nodes_centers
+    for x, y in iterator:
+        # Definizione delle regioni
+        # Cerchio esterno (cerchio completo)
         x1_outer = max(0, x - radius)
         y1_outer = max(0, y - radius)
         x2_outer = min(w - 1, x + radius)
         y2_outer = min(h - 1, y + radius)
 
-        # Inner circle (hollow center - smaller radius)
+        # Cerchio interno (centro vuoto - raggio ridotto)
         inner_radius = max(5, radius - ring_width)
         x1_inner = max(0, x - inner_radius)
         y1_inner = max(0, y - inner_radius)
         x2_inner = min(w - 1, x + inner_radius)
         y2_inner = min(h - 1, y + inner_radius)
 
-        # Ring area (where circle edge should be)
+        # Area anulare (dove dovrebbe essere presente il bordo del cerchio)
         x1_ring = max(0, x - radius)
         y1_ring = max(0, y - radius)
         x2_ring = min(w - 1, x + radius)
         y2_ring = min(h - 1, y + radius)
 
-        # Calculate areas
+        # Calcolo delle aree
         inner_area = (x2_inner - x1_inner) * (y2_inner - y1_inner)
         outer_area = (x2_outer - x1_outer) * (y2_outer - y1_outer)
         ring_area = outer_area - inner_area
         if inner_area <= 0 or ring_area <= 0:
             continue
 
-        # Check 1: Inner area should be mostly bright/white (hollow)
+        # Controllo 1: l’area interna deve essere prevalentemente chiara (cerchio vuoto)
         inner_bright_sum = (
             bright_integral[y2_inner + 1, x2_inner + 1]
             - bright_integral[y1_inner, x2_inner + 1]
@@ -161,7 +168,7 @@ def detect_hollow_circles_with_letters(
         )
         inner_bright_ratio = inner_bright_sum / inner_area
 
-        # Check 2: Ring area should have significant edges (circle boundary)
+        # Controllo 2: l’area anulare deve contenere un numero significativo di bordi (contorno del cerchio)
         ring_edge_sum = (
             edge_integral[y2_ring + 1, x2_ring + 1]
             - edge_integral[y1_ring, x2_ring + 1]
@@ -169,7 +176,7 @@ def detect_hollow_circles_with_letters(
             + edge_integral[y1_ring, x1_ring]
         )
 
-        # Subtract inner edges if any
+        # Sottrae eventuali bordi presenti nell’area interna
         inner_edge_sum = (
             edge_integral[y2_inner + 1, x2_inner + 1]
             - edge_integral[y1_inner, x2_inner + 1]
@@ -180,10 +187,10 @@ def detect_hollow_circles_with_letters(
         ring_only_edges = ring_edge_sum - inner_edge_sum
         ring_edge_ratio = ring_only_edges / ring_area if ring_area > 0 else 0
 
-        # Check if it's a hollow circle
+        # Verifica se si tratta di un cerchio vuoto
         is_hollow = inner_bright_ratio >= inner_ratio_thr
         has_circle_edge = ring_edge_ratio >= edge_ratio_thr
-        # Additional check: Center should have some dark pixels (text)
+        # Controllo aggiuntivo: il centro deve contenere pixel scuri (testo)
         center_roi = gray[y1_inner:y2_inner, x1_inner:x2_inner]
         has_dark_pixels = np.any(center_roi < 150) if center_roi.size > 0 else False
 
@@ -197,10 +204,10 @@ def detect_hollow_circles_with_letters(
                 "text": None,
             }
 
-            # Extract text if requested
+            # Estrazione del testo se richiesto
             # if extract_text and center_roi.size > 0:
             #     try:
-            #         # Enhance ROI for better OCR
+            #         # Miglioramento della ROI per l’OCR
             #         roi_enhanced = cv2.resize(
             #             center_roi, None, fx=3, fy=3, interpolation=cv2.INTER_CUBIC
             #         )
@@ -208,7 +215,7 @@ def detect_hollow_circles_with_letters(
             #             roi_enhanced, 0, 255, cv2.THRESH_BINARY + cv2.THRESH_OTSU
             #         )
 
-            #         # OCR configuration for single character
+            #         # Configurazione OCR per singolo carattere
             #         text = pytesseract.image_to_string(
             #             roi_binary,
             #             config="--psm 10 --oem 3 -c tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789",
@@ -221,16 +228,16 @@ def detect_hollow_circles_with_letters(
 
             hollow_circles.append(detected)
 
-            # Draw detection
+            # Disegno del rilevamento
             if debug_img:
-                # Draw outer circle
+                # Disegna il cerchio esterno
                 cv2.circle(img_copy, (x, y), radius, (0, 255, 0), 2)
-                # Draw center point
+                # Disegna il punto centrale
                 cv2.circle(img_copy, (x, y), 3, (255, 0, 0), -1)
-                # Draw inner circle boundary
+                # Disegna il contorno del cerchio interno
                 cv2.circle(img_copy, (x, y), inner_radius, (255, 255, 0), 1)
 
-                # Draw text if detected
+                # Disegna il testo se rilevato
                 if detected["text"]:
                     cv2.putText(
                         img_copy,
@@ -245,7 +252,7 @@ def detect_hollow_circles_with_letters(
     if debug_img:
         cv2.imwrite(output_path, img_copy)
 
-    print(len(hollow_circles), "hollow circles with letters detected.")
+    print(len(hollow_circles), "cerchi vuoti con lettere rilevati.")
     return hollow_circles
 
 
@@ -264,22 +271,26 @@ def detect_small_black_circles(
     else:
         gray = img
 
-    # --- BLACK FILLED CIRCLES DETECTION ---
+    # --- RILEVAMENTO DI CERCHI NERI PIENI ---
 
-    # Binary mask of black pixels
+    # Maschera binaria dei pixel neri
     black_mask = (gray < black_thr).astype(np.uint8)
-    # Integral image for fast area sum
+    # Immagine integrale per il calcolo rapido dell’area
     integral = cv2.integral(black_mask)
 
     h, w = gray.shape
     black_circle_points = []
-
-    for x, y in tqdm(nodes_centers, desc="Detecting small black circles"):
-        # Bounding box of circular region
+    use_tqdm = True
+    if getattr(sys, "frozen", False):
+        use_tqdm = False  # no console in PyInstaller windowed mode
+    iterator = tqdm(nodes_centers, desc="Detecting small black circles") if use_tqdm else nodes_centers
+    for x, y in iterator:
+        # Bounding box della regione circolare
         x1, y1 = max(0, x - radius), max(0, y - radius)
         x2, y2 = min(w - 1, x + radius), min(h - 1, y + radius)
 
-        # Fast rectangular region sum using the integral image
+        # Calcolo rapido della somma nella regione rettangolare
+        # utilizzando l’immagine integrale
         region_sum = (
             integral[y2 + 1, x2 + 1]
             - integral[y1, x2 + 1]
@@ -287,7 +298,8 @@ def detect_small_black_circles(
             + integral[y1, x1]
         )
 
-        # Approximate ratio (rectangular proxy)
+        # Rapporto approssimato di pixel neri
+        # (approssimazione rettangolare della regione circolare)
         black_ratio = region_sum / ((y2 - y1) * (x2 - x1))
 
         if black_ratio >= ratio_thr:
@@ -299,3 +311,4 @@ def detect_small_black_circles(
         cv2.imwrite(output_path, img_copy)
 
     return black_circle_points
+
