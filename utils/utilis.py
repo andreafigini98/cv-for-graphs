@@ -36,11 +36,23 @@ def get_available_memory_gb():
     mem = psutil.virtual_memory()
     return mem.available / (1024**3)
 
-
+'''
 def resource_path(relative_path: str) -> Path:
     """Get absolute path to resource, works for dev and PyInstaller."""
     if getattr(sys, "frozen", False):
         base_path = Path(sys._MEIPASS)
     else:
         base_path = Path(__file__).parent
+    return base_path / relative_path
+'''
+
+def resource_path(relative_path: str) -> Path:
+    """Get absolute path to resource, works for dev and PyInstaller."""
+    if getattr(sys, "frozen", False):
+        # PyInstaller: risolve da _MEIPASS
+        base_path = Path(sys._MEIPASS)
+    else:
+        # Dev: usa la root del progetto
+        base_path = Path(__file__).resolve().parent.parent  # <-- sali di un livello
+
     return base_path / relative_path
