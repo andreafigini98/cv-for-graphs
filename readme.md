@@ -13,7 +13,7 @@ Estrarre il contenuto del codice in una nuova cartella sul proprio pc
 aprire Powershell
 navigare alla cartella dove si é salvato il codice estratto dallo zip
 eseguire il comando seguente per installare tutte le dipendenze del progetto
-```pip install -r "requirement.txt"```
+```pip install -r "requirements.txt"```
 
 4) installare Tesseract OCR  
 Scaricare la verisone più recente di Tesseract OCR per Windows dal sito: https://github.com/UB-Mannheim/tesseract/wiki 
