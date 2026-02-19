@@ -20,7 +20,7 @@ navigare alla cartella dove si é salvato il codice estratto dallo zip
 
 eseguire il comando seguente per installare tutte le dipendenze del progetto
 
-```pip install -r "requirement.txt"```
+```pip install -r "requirements.txt"```
 
 ## 4) installare Tesseract OCR  
 
